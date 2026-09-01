@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+coverage
+**/dist
+**/build
+**/node_modules
+ml/
+data/
+CHANGELOG.md

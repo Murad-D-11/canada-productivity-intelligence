@@ -1,0 +1,207 @@
+// Prisma schema for Canada Productivity Intelligence.
+//
+// Design principles:
+//   * Observations store the ORIGINAL source values with full provenance so we
+//     never silently transform or interpolate target data.
+//   * Forecasts, driver attributions, and scenario runs are kept separate from
+//     observed data so predictions are never confused with ground truth.
+//   * All model outputs record the model version + training cutoff to prevent
+//     any use of future information relative to a forecast origin.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Canadian geography (national, provincial, territorial).
+model Geography {
+  id        String   @id @default(cuid())
+  /// Statistics Canada Standard Geographical Classification code.
+  sgcCode   String   @unique
+  name      String
+  level     GeoLevel
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  observations ProductivityObservation[]
+  covariates   Covariate[]
+  forecasts    Forecast[]
+  scenarios    ScenarioRun[]
+
+  @@index([level])
+}
+
+enum GeoLevel {
+  NATIONAL
+  PROVINCE
+  TERRITORY
+}
+
+/// Industry classification (NAICS-based).
+model Industry {
+  id        String   @id @default(cuid())
+  /// North American Industry Classification System code.
+  naicsCode String   @unique
+  name      String
+  /// Parent NAICS code for hierarchy navigation (nullable for top level).
+  parentNaicsCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  observations ProductivityObservation[]
+  forecasts    Forecast[]
+  scenarios    ScenarioRun[]
+
+  @@index([parentNaicsCode])
+}
+
+/// A single observed productivity measurement, exactly as published.
+model ProductivityObservation {
+  id          String   @id @default(cuid())
+  geographyId String
+  industryId  String
+  /// Type of productivity measure (labour, multifactor, etc.).
+  measure     ProductivityMeasure
+  /// Period start date (quarterly/annual series normalized to a date).
+  periodStart DateTime
+  periodType  PeriodType
+  /// The published value. Null means genuinely not released (never imputed).
+  value       Float?
+  unit        String
+  /// Provenance: source system, StatCan product/vector id, retrieval time.
+  source          DataSource
+  sourceVectorId  String?
+  sourceTableId   String?
+  retrievedAt     DateTime
+  /// StatCan status/symbol flags (e.g. suppressed, revised) preserved verbatim.
+  statusFlag      String?
+  createdAt   DateTime @default(now())
+
+  geography Geography @relation(fields: [geographyId], references: [id])
+  industry  Industry  @relation(fields: [industryId], references: [id])
+
+  @@unique([geographyId, industryId, measure, periodStart, periodType])
+  @@index([measure, periodStart])
+}
+
+enum ProductivityMeasure {
+  LABOUR_PRODUCTIVITY
+  MULTIFACTOR_PRODUCTIVITY
+  HOURS_WORKED
+  REAL_GDP
+  UNIT_LABOUR_COST
+}
+
+enum PeriodType {
+  ANNUAL
+  QUARTERLY
+  MONTHLY
+}
+
+enum DataSource {
+  STATCAN_WDS
+  MSC_GEOMET
+  CANADIAN_SURVEY_BUSINESS_CONDITIONS
+}
+
+/// Exogenous covariate values (climate, business conditions) used as features.
+model Covariate {
+  id          String   @id @default(cuid())
+  geographyId String
+  name        String
+  periodStart DateTime
+  periodType  PeriodType
+  value       Float?
+  unit        String
+  source      DataSource
+  retrievedAt DateTime
+  createdAt   DateTime @default(now())
+
+  geography Geography @relation(fields: [geographyId], references: [id])
+
+  @@unique([geographyId, name, periodStart, periodType])
+  @@index([name, periodStart])
+}
+
+/// Registry of trained model versions with reproducibility metadata.
+model ModelVersion {
+  id            String   @id @default(cuid())
+  name          String
+  /// Semantic version or git-derived tag of the training pipeline.
+  version       String
+  algorithm     String
+  /// Latest period included in training. Guards against look-ahead leakage.
+  trainingCutoff DateTime
+  /// Reported backtest metrics (never fabricated; populated by the pipeline).
+  metricsJson   Json?
+  featureListJson Json?
+  createdAt     DateTime @default(now())
+
+  forecasts    Forecast[]
+  attributions DriverAttribution[]
+
+  @@unique([name, version])
+}
+
+/// A model-produced forecast point. Distinct from observations.
+model Forecast {
+  id             String   @id @default(cuid())
+  modelVersionId String
+  geographyId    String
+  industryId     String
+  measure        ProductivityMeasure
+  /// The origin date from which the forecast was made (no data after this used).
+  forecastOrigin DateTime
+  targetPeriod   DateTime
+  periodType     PeriodType
+  predicted      Float
+  /// Prediction interval bounds (nullable if model does not produce them).
+  lowerBound     Float?
+  upperBound     Float?
+  createdAt      DateTime @default(now())
+
+  modelVersion ModelVersion @relation(fields: [modelVersionId], references: [id])
+  geography    Geography    @relation(fields: [geographyId], references: [id])
+  industry     Industry     @relation(fields: [industryId], references: [id])
+
+  @@index([geographyId, industryId, measure, targetPeriod])
+}
+
+/// SHAP-based feature attribution for a forecast (association, not causation).
+model DriverAttribution {
+  id             String   @id @default(cuid())
+  modelVersionId String
+  featureName    String
+  /// Mean absolute SHAP value or signed contribution for the context.
+  contribution   Float
+  /// Optional grouping context (industry/geography/period) as JSON.
+  contextJson    Json?
+  createdAt      DateTime @default(now())
+
+  modelVersion ModelVersion @relation(fields: [modelVersionId], references: [id])
+
+  @@index([modelVersionId, featureName])
+}
+
+/// A user-defined what-if scenario and its simulated outcome.
+model ScenarioRun {
+  id             String   @id @default(cuid())
+  geographyId    String
+  industryId     String
+  measure        ProductivityMeasure
+  /// User-specified feature adjustments as JSON (e.g. { "hours_worked": +0.05 }).
+  adjustmentsJson Json
+  baselineValue  Float
+  simulatedValue Float
+  modelVersionRef String
+  createdAt      DateTime @default(now())
+
+  geography Geography @relation(fields: [geographyId], references: [id])
+  industry  Industry  @relation(fields: [industryId], references: [id])
+
+  @@index([geographyId, industryId, measure])
+}

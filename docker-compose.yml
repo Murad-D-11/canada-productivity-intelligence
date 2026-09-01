@@ -1,0 +1,77 @@
+# Canada Productivity Intelligence - local development orchestration.
+# Brings up PostgreSQL, the backend API, the frontend dev server, and the ML
+# environment. Each service has its own Dockerfile in its subdirectory.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cpi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cpi_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_local_only}
+      POSTGRES_DB: ${POSTGRES_DB:-canada_productivity}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-cpi_user} -d ${POSTGRES_DB:-canada_productivity}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: cpi-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      BACKEND_PORT: ${BACKEND_PORT:-4000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cpi_user}:${POSTGRES_PASSWORD:-change_me_local_only}@postgres:5432/${POSTGRES_DB:-canada_productivity}?schema=public
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      STATCAN_WDS_BASE_URL: ${STATCAN_WDS_BASE_URL:-https://www150.statcan.gc.ca/t1/wds/rest}
+      MSC_GEOMET_OGC_API_BASE_URL: ${MSC_GEOMET_OGC_API_BASE_URL:-https://api.weather.gc.ca}
+    ports:
+      - '${BACKEND_PORT:-4000}:4000'
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: cpi-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:4000/api}
+    ports:
+      - '5173:5173'
+
+  ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: cpi-ml
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cpi_user}:${POSTGRES_PASSWORD:-change_me_local_only}@postgres:5432/${POSTGRES_DB:-canada_productivity}
+      STATCAN_WDS_BASE_URL: ${STATCAN_WDS_BASE_URL:-https://www150.statcan.gc.ca/t1/wds/rest}
+      MSC_GEOMET_OGC_API_BASE_URL: ${MSC_GEOMET_OGC_API_BASE_URL:-https://api.weather.gc.ca}
+      ML_RANDOM_SEED: ${ML_RANDOM_SEED:-42}
+    volumes:
+      - ./ml:/app
+      - ./data:/data
+    # ML runs pipelines on demand rather than as a long-lived server.
+    command: ['python', '-m', 'cpi_ml.cli', '--help']
+
+volumes:
+  postgres_data:
+    name: cpi_postgres_data

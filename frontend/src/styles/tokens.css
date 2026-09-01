@@ -1,0 +1,55 @@
+/*
+ * Design tokens for Canada Productivity Intelligence.
+ *
+ * Colors are stored as space-separated RGB channels so Tailwind's
+ * `<alpha-value>` syntax works (e.g. bg-brand/50). Light theme is the default;
+ * the `.dark` class on <html> switches to the dark palette.
+ */
+
+:root {
+  /* Brand */
+  --color-brand: 197 48 48; /* deep maple red */
+  --color-brand-muted: 220 120 120;
+
+  /* Surfaces */
+  --color-surface: 249 250 251;
+  --color-surface-raised: 255 255 255;
+  --color-surface-sunken: 241 243 245;
+
+  /* Content / text */
+  --color-content: 17 24 39;
+  --color-content-muted: 75 85 99;
+  --color-content-subtle: 148 163 184;
+
+  /* Lines */
+  --color-border: 226 232 240;
+
+  /* Semantic states */
+  --color-positive: 21 128 61;
+  --color-negative: 185 28 28;
+  --color-caution: 180 120 10;
+  --color-info: 30 100 180;
+
+  /* Spacing scale reference (documentation only; Tailwind provides utilities) */
+  --space-unit: 0.25rem;
+}
+
+.dark {
+  --color-brand: 239 100 100;
+  --color-brand-muted: 150 60 60;
+
+  --color-surface: 15 18 24;
+  --color-surface-raised: 22 27 34;
+  --color-surface-sunken: 10 12 16;
+
+  --color-content: 237 242 247;
+  --color-content-muted: 160 170 185;
+  --color-content-subtle: 100 112 130;
+
+  --color-border: 42 50 62;
+
+  --color-positive: 74 201 126;
+  --color-negative: 248 113 113;
+  --color-caution: 234 179 8;
+  --color-info: 96 165 250;
+}
