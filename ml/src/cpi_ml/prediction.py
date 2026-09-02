@@ -24,11 +24,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from cpi_ml.artifacts import ModelMetadata, load_artifact
+
+if TYPE_CHECKING:
+    from cpi_ml.explainability import ExplanationResult
 
 
 @dataclass(frozen=True)
@@ -122,3 +125,86 @@ class ProductivityForecaster:
                 "notes": meta.notes,
             },
         )
+
+    def explain(
+        self, features: dict[str, float | None], *, forecast_period: str | None = None
+    ) -> "ExplanationResult":
+        """Explain a single forecast using the SAME model, preprocessing,
+        feature ordering, and feature values as ``predict``.
+
+        For the selected linear (ridge) model the explanation is exact: the
+        reported contributions plus the base value equal the prediction. For a
+        non-linear served model we report global importances as the drivers and
+        note that exact per-forecast additive attribution is unavailable without
+        SHAP. Every value is a model contribution (association), not a causal
+        effect.
+        """
+        # Local import avoids a circular import at module load time.
+        from cpi_ml.explainability import (
+            ExplanationResult,
+            _is_linear,
+            _unwrap_pipeline,
+            global_importance,
+            linear_contributions,
+        )
+
+        x, used, missing = self._vectorize(features)
+        prediction = float(np.asarray(self._model.predict(x)).ravel()[0])
+        meta = self._metadata
+
+        _, _, estimator = _unwrap_pipeline(self._model)
+        if _is_linear(estimator):
+            contribs, base_value = linear_contributions(
+                self._model, x.ravel(), meta.feature_names, used
+            )
+            return ExplanationResult(
+                method="exact_linear_contribution",
+                prediction=prediction,
+                base_value=base_value,
+                target=meta.target,
+                model_version=meta.model_version,
+                model_type=meta.model_type,
+                forecast_period=forecast_period,
+                contributions=[c.as_dict() for c in contribs],
+                missing_features=missing,
+                notes=[
+                    "base_value is the model intercept; "
+                    "base_value + sum(contribution) == prediction.",
+                ],
+            )
+
+        # Non-linear served model: fall back to global importance as drivers.
+        importances = global_importance(self._model, meta.feature_names)
+        return ExplanationResult(
+            method="global_importance_fallback",
+            prediction=prediction,
+            base_value=float("nan"),
+            target=meta.target,
+            model_version=meta.model_version,
+            model_type=meta.model_type,
+            forecast_period=forecast_period,
+            contributions=[i.as_dict() for i in importances],
+            missing_features=missing,
+            notes=[
+                "Served model is non-linear; showing global feature importance "
+                "as drivers. Exact additive per-forecast attribution would "
+                "require SHAP.",
+            ],
+        )
+
+
+def explain_prediction(
+    features: dict[str, float | None],
+    *,
+    artifacts_dir: str | Path = "artifacts",
+    model_version: str | None = None,
+    forecast_period: str | None = None,
+) -> "ExplanationResult":
+    """Convenience: load the (latest) model and explain one forecast.
+
+    Mirrors the shape of a plain ``explain_prediction(features)`` call while
+    letting callers point at a specific artifacts dir / version. Returns the
+    same structured, causality-safe result as ``ProductivityForecaster.explain``.
+    """
+    forecaster = ProductivityForecaster.load(artifacts_dir, model_version)
+    return forecaster.explain(features, forecast_period=forecast_period)

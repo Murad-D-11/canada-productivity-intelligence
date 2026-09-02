@@ -113,6 +113,98 @@ computed from real out-of-sample folds and are reported as-is.
 - **Random forest overfits** this small, largely linear quarterly series and is
   not competitive here.
 
+## Explainability: "Why is the model predicting this?"
+
+### Method
+
+The selected model is **ridge** (a linear model inside
+`SimpleImputer(median) -> StandardScaler -> Ridge`). For a linear model the
+prediction decomposes **exactly**:
+
+```
+prediction = base_value + sum_i ( coef_i * scaled_value_i )
+```
+
+where `base_value` is the model intercept and
+`scaled_value_i = (imputed_i - mean_i) / scale_i` (the same imputation and
+scaling the model was fit with). Each term `coef_i * scaled_value_i` is that
+feature's **contribution** to the specific prediction.
+
+This is the same decomposition SHAP's `LinearExplainer` produces for a linear
+model, computed in closed form — so it is exact, deterministic, and needs no
+extra dependency or sampling. SHAP is therefore not used for the served linear
+model. (If a non-linear model were ever served, the code falls back to global
+feature importance and notes that exact per-forecast attribution would require
+SHAP.)
+
+### What the values mean
+
+- **Global feature importance** (`global_importance`) — how influential each
+  feature is to the model overall. For ridge this is the magnitude of the
+  standardized coefficient (comparable across features because inputs are
+  standardized), with a **direction** (increases / decreases) from the sign.
+- **Per-forecast contribution** (`explain_prediction`) — for one prediction,
+  the additive `coef_i * scaled_value_i` term per feature, sorted by magnitude,
+  each annotated with the feature's current value, unit, source, and
+  description. `base_value + sum(contributions)` reconstructs the prediction.
+
+### Association, not causation
+
+Every value is a **model contribution** / **prediction driver** describing
+association the model learned from historical data. It is **not** a causal
+effect. A large contribution does **not** mean that changing the feature would
+cause productivity to change. This wording is enforced in the code, the
+`ExplanationResult.disclaimer`, and the feature metadata, and any UI surfacing
+these values must preserve it.
+
+### Centralized feature metadata
+
+`cpi_ml/feature_metadata.py` is the single source of truth for every feature:
+internal name, display name, unit, plain-language description, data source,
+source table/API, whether it is eligible for scenario simulation, and
+reasonable min/max bounds. Explainability and any future "What drives
+productivity?" / scenario UI read from here rather than redefining labels.
+
+### Interfaces
+
+```python
+from cpi_ml.prediction import explain_prediction
+from cpi_ml.explainability import global_importance
+from cpi_ml.prediction import ProductivityForecaster
+
+# Per-forecast explanation (loads the latest artifact by default).
+result = explain_prediction({"prodLag1": 105.2, "prodLag4": 103.1, ...})
+result.base_value         # model intercept
+result.contributions      # sorted list of per-feature model contributions
+result.disclaimer         # association-not-causation notice
+
+# Global importance for the served model.
+f = ProductivityForecaster.load("artifacts")
+importances = global_importance(f._model, f.metadata.feature_names)
+```
+
+```bash
+# Per-forecast explanation as JSON.
+cpi-ml explain --features-file features.json --forecast-period 2026-Q2
+# Global feature importance only.
+cpi-ml explain --global
+```
+
+The explanation reuses the **same** loaded model, preprocessing, feature
+ordering, and feature values as `predict` — the explanation and the forecast
+can never disagree about which inputs were used.
+
+### Explainability limitations
+
+- Contributions are association, not causation (see above).
+- For the linear model, contributions are computed on **standardized** values;
+  the reported `current_value` is the original (human-readable) value, while the
+  contribution reflects the standardized term the model actually uses.
+- Global importance for a tree model (fallback) is unsigned, so its direction is
+  reported as `"unknown"`.
+- Explanations inherit the model's own limitations (national-only, quarterly,
+  weather features inactive, and the modest accuracy documented above).
+
 ### Model artifacts
 
 Training writes a reproducible artifact to `ml/artifacts/<model_version>/`

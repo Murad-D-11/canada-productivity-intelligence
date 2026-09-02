@@ -136,6 +136,34 @@ def build_parser() -> argparse.ArgumentParser:
         "--log-level", default="WARNING", help="Logging level (DEBUG/INFO/WARNING/ERROR)."
     )
 
+    explain = sub.add_parser(
+        "explain",
+        help="Explain a forecast (model contributions / prediction drivers, not causal).",
+    )
+    explain.add_argument(
+        "--model-version", default=None,
+        help="Model version to explain (default: latest trained).",
+    )
+    explain.add_argument(
+        "--features", default=None,
+        help="Feature values as JSON (per-forecast explanation).",
+    )
+    explain.add_argument(
+        "--features-file", default=None,
+        help="Path to a JSON file with feature values (alternative to --features).",
+    )
+    explain.add_argument(
+        "--forecast-period", default=None,
+        help="Optional label for the period being explained (recorded in output).",
+    )
+    explain.add_argument(
+        "--global", dest="global_only", action="store_true",
+        help="Show only global feature importance (no per-forecast features needed).",
+    )
+    explain.add_argument(
+        "--log-level", default="WARNING", help="Logging level (DEBUG/INFO/WARNING/ERROR)."
+    )
+
     return parser
 
 
@@ -445,6 +473,65 @@ def cmd_predict(
     return 0
 
 
+def cmd_explain(
+    *,
+    model_version: str | None,
+    features: str | None,
+    features_file: str | None,
+    forecast_period: str | None,
+    global_only: bool,
+    log_level: str,
+) -> int:
+    """Print a structured, causality-safe explanation as JSON."""
+    import json
+
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper(), logging.WARNING),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    from cpi_ml.explainability import global_importance
+    from cpi_ml.prediction import ProductivityForecaster
+
+    settings = get_settings()
+    artifacts_dir = settings.artifacts_dir
+    if not Path(artifacts_dir).is_absolute():
+        artifacts_dir = str(Path(__file__).resolve().parents[2] / artifacts_dir)
+
+    try:
+        forecaster = ProductivityForecaster.load(artifacts_dir, model_version)
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}")
+        return 2
+
+    if global_only:
+        items = global_importance(forecaster._model, forecaster.metadata.feature_names)
+        payload = {
+            "kind": "global_importance",
+            "target": forecaster.metadata.target,
+            "model_version": forecaster.metadata.model_version,
+            "model_type": forecaster.metadata.model_type,
+            "disclaimer": (
+                "Model contributions (prediction drivers) describing association "
+                "learned from historical data — not causal effects."
+            ),
+            "features": [i.as_dict() for i in items],
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    if features_file:
+        feature_values = json.loads(Path(features_file).read_text(encoding="utf-8"))
+    elif features:
+        feature_values = json.loads(features)
+    else:
+        print("ERROR: provide --features/--features-file, or use --global.")
+        return 2
+
+    result = forecaster.explain(feature_values, forecast_period=forecast_period)
+    print(json.dumps(result.as_dict(), indent=2, sort_keys=True))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -482,6 +569,15 @@ def main(argv: list[str] | None = None) -> int:
             features=args.features,
             features_file=args.features_file,
             forecast_period=args.forecast_period,
+            log_level=args.log_level,
+        )
+    if args.command == "explain":
+        return cmd_explain(
+            model_version=args.model_version,
+            features=args.features,
+            features_file=args.features_file,
+            forecast_period=args.forecast_period,
+            global_only=args.global_only,
             log_level=args.log_level,
         )
 
