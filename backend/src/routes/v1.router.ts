@@ -190,7 +190,16 @@ v1Router.get('/data/status', asyncHandler(async (_req: Request, res: Response) =
   }
 
   const datasetId = (await resolveDatasetId()) as string;
-  const [industries, measures, observations, lastRun] = await Promise.all([
+  const [
+    industries,
+    measures,
+    observations,
+    lastRun,
+    latestProductivity,
+    weatherCount,
+    latestWeather,
+    featureSet,
+  ] = await Promise.all([
     prisma.statCanIndustry.count({ where: { datasetId } }),
     prisma.statCanMeasure.count({ where: { datasetId } }),
     prisma.statCanObservation.count({ where: { datasetId } }),
@@ -213,7 +222,29 @@ v1Router.get('/data/status', asyncHandler(async (_req: Request, res: Response) =
         durationSeconds: true,
       },
     }),
+    // Latest productivity observation period (data freshness).
+    prisma.statCanObservation.findFirst({
+      where: { datasetId },
+      orderBy: { periodStart: 'desc' },
+      select: { periodStart: true, periodLabel: true },
+    }),
+    prisma.weatherObservation.count(),
+    prisma.weatherObservation.findFirst({
+      orderBy: { periodStart: 'desc' },
+      select: { periodStart: true, periodLabel: true },
+    }),
+    prisma.featureSet.findFirst({
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, periodCutoff: true, rowCount: true, createdAt: true },
+    }),
   ]);
+
+  // Supported geographies come from the ingested geography members (real data).
+  const geographyRows = await prisma.statCanGeography.findMany({
+    where: { datasetId },
+    orderBy: { name: 'asc' },
+    select: { name: true },
+  });
 
   res.json({
     ingested: observations > 0,
@@ -229,6 +260,28 @@ v1Router.get('/data/status', asyncHandler(async (_req: Request, res: Response) =
       releaseTime: dataset.releaseTime?.toISOString() ?? null,
     },
     counts: { industries, measures, observations },
+    supported: {
+      industries,
+      geographies: geographyRows.map((g) => g.name),
+    },
+    productivity: {
+      latestObservationPeriod: latestProductivity?.periodLabel ?? null,
+      latestObservationDate: latestProductivity?.periodStart.toISOString().slice(0, 10) ?? null,
+    },
+    weather: {
+      observations: weatherCount,
+      latestObservationPeriod: latestWeather?.periodLabel ?? null,
+      latestObservationDate: latestWeather?.periodStart.toISOString().slice(0, 10) ?? null,
+    },
+    features: featureSet
+      ? {
+          id: featureSet.id,
+          name: featureSet.name,
+          periodCutoff: featureSet.periodCutoff.toISOString().slice(0, 10),
+          rowCount: featureSet.rowCount,
+          generatedAt: featureSet.createdAt.toISOString(),
+        }
+      : null,
     lastIngestion: lastRun
       ? {
           status: lastRun.status,

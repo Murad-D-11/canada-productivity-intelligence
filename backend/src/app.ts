@@ -6,7 +6,9 @@ import { corsOrigins } from './config/env.js';
 import { logger } from './config/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { apiRouter } from './routes/api.router.js';
+import { forecastRouter } from './routes/forecast.router.js';
 import { healthRouter } from './routes/health.route.js';
+import { scenariosRouter } from './routes/scenarios.router.js';
 import { v1Router } from './routes/v1.router.js';
 import { weatherRouter } from './routes/weather.router.js';
 
@@ -27,6 +29,12 @@ export function createApp(): Express {
 
   // Versioned StatCan data API (real ingested data).
   app.use('/api/v1', v1Router);
+
+  // Forecasting + model endpoints (bridge to the Python ML system).
+  app.use('/api/v1', forecastRouter);
+
+  // What-if scenario simulation.
+  app.use('/api/v1/scenarios', scenariosRouter);
 
   // Weather + feature API (real ingested / derived data). Mounted before the
   // meta router so its concrete routes take precedence.
