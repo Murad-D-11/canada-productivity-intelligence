@@ -15,7 +15,7 @@ never fabricates data, forecasts, drivers, or metrics.
 
 ## What it is
 
-A working prototype (built for the Ascendance Foundry Hackathon) that:
+A working prototype that:
 
 - ingests real Statistics Canada labour-productivity data,
 - trains and validates a forecasting model with strict temporal discipline,
