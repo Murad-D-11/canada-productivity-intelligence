@@ -88,6 +88,54 @@ def build_parser() -> argparse.ArgumentParser:
         "--log-level", default="INFO", help="Logging level (DEBUG/INFO/WARNING/ERROR)."
     )
 
+    train = sub.add_parser(
+        "train-model",
+        help="Train + evaluate forecasting models and save the best as an artifact.",
+    )
+    train.add_argument(
+        "--feature-set-id", default=None,
+        help="FeatureSet id to train on (default: most recent).",
+    )
+    train.add_argument(
+        "--horizon", type=int, default=1,
+        help="Forecast horizon in periods/quarters ahead (default 1).",
+    )
+    train.add_argument(
+        "--val-fraction", type=float, default=0.2,
+        help="Fraction of the time span used for the validation block (default 0.2).",
+    )
+    train.add_argument(
+        "--test-fraction", type=float, default=0.2,
+        help="Fraction of the time span used for the held-out test block (default 0.2).",
+    )
+    train.add_argument(
+        "--log-level", default="INFO", help="Logging level (DEBUG/INFO/WARNING/ERROR)."
+    )
+
+    predict = sub.add_parser(
+        "predict",
+        help="Generate a forecast from a trained model artifact (JSON feature input).",
+    )
+    predict.add_argument(
+        "--model-version", default=None,
+        help="Model version to use (default: latest trained).",
+    )
+    predict.add_argument(
+        "--features", default=None,
+        help='Feature values as JSON, e.g. \'{"prodLag1": 101.2, "prodLag4": 99.8}\'.',
+    )
+    predict.add_argument(
+        "--features-file", default=None,
+        help="Path to a JSON file with feature values (alternative to --features).",
+    )
+    predict.add_argument(
+        "--forecast-period", default=None,
+        help="Optional label for the period being forecast (recorded in output).",
+    )
+    predict.add_argument(
+        "--log-level", default="WARNING", help="Logging level (DEBUG/INFO/WARNING/ERROR)."
+    )
+
     return parser
 
 
@@ -292,6 +340,111 @@ def cmd_generate_features(*, name: str, log_level: str) -> int:
     return 0
 
 
+def cmd_train_model(
+    *,
+    feature_set_id: str | None,
+    horizon: int,
+    val_fraction: float,
+    test_fraction: float,
+    log_level: str,
+) -> int:
+    """Train, evaluate, select, and persist a forecasting model artifact."""
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    from cpi_ml.training import ForecastTrainer
+
+    settings = get_settings()
+    if not settings.database_url:
+        print("ERROR: DATABASE_URL is not configured. Set it in .env or the environment.")
+        return 2
+
+    # Resolve the artifacts dir relative to the ml/ package root when relative.
+    artifacts_dir = settings.artifacts_dir
+    if not Path(artifacts_dir).is_absolute():
+        artifacts_dir = str(Path(__file__).resolve().parents[2] / artifacts_dir)
+
+    trainer = ForecastTrainer(
+        settings.database_url,
+        artifacts_dir=artifacts_dir,
+        random_seed=settings.random_seed,
+    )
+    print(f"Training forecasting models (horizon={horizon} period(s))...")
+    report = trainer.run(
+        feature_set_id=feature_set_id,
+        horizon=horizon,
+        val_fraction=val_fraction,
+        test_fraction=test_fraction,
+    )
+
+    print("\nModel comparison (chronological validation, then held-out test):")
+    print(f"  feature set: {report.feature_set_id}")
+    print(f"  features   : {', '.join(report.feature_names)}")
+    print(f"  train {report.train_period['start']}..{report.train_period['end']} "
+          f"({report.n_train_rows} rows) | "
+          f"val {report.val_period['start']}..{report.val_period['end']} "
+          f"({report.n_val_rows}) | "
+          f"test {report.test_period['start']}..{report.test_period['end']} "
+          f"({report.n_test_rows})")
+    print(f"  {'model':<16}{'val MAE':>10}{'val RMSE':>11}{'val R2':>9}"
+          f"{'test MAE':>11}{'test RMSE':>12}{'test R2':>9}")
+    for r in report.results:
+        r2 = f"{r.val_r2:.3f}" if r.val_r2 is not None else "n/a"
+        tr2 = f"{r.test_r2:.3f}" if r.test_r2 is not None else "n/a"
+        tmae = f"{r.test_mae:.4f}" if r.test_mae is not None else "n/a"
+        trmse = f"{r.test_rmse:.4f}" if r.test_rmse is not None else "n/a"
+        marker = " *" if r.model_type == report.selected_model_type else "  "
+        print(f"{marker}{r.model_type:<14}{r.val_mae:>10.4f}{r.val_rmse:>11.4f}{r2:>9}"
+              f"{tmae:>11}{trmse:>12}{tr2:>9}")
+    print(f"\n  selected: {report.selected_model_type} "
+          f"({'beats' if report.beats_baseline else 'does NOT beat'} naive baseline)")
+    print(f"  model version: {report.model_version}")
+    print(f"  artifact: {report.artifact_dir}")
+    return 0
+
+
+def cmd_predict(
+    *,
+    model_version: str | None,
+    features: str | None,
+    features_file: str | None,
+    forecast_period: str | None,
+    log_level: str,
+) -> int:
+    """Load a trained artifact and print a structured forecast as JSON."""
+    import json
+
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper(), logging.WARNING),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    from cpi_ml.prediction import ProductivityForecaster
+
+    settings = get_settings()
+    artifacts_dir = settings.artifacts_dir
+    if not Path(artifacts_dir).is_absolute():
+        artifacts_dir = str(Path(__file__).resolve().parents[2] / artifacts_dir)
+
+    if features_file:
+        feature_values = json.loads(Path(features_file).read_text(encoding="utf-8"))
+    elif features:
+        feature_values = json.loads(features)
+    else:
+        print("ERROR: provide feature values via --features or --features-file.")
+        return 2
+
+    try:
+        forecaster = ProductivityForecaster.load(artifacts_dir, model_version)
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}")
+        return 2
+
+    result = forecaster.predict(feature_values, forecast_period=forecast_period)
+    print(json.dumps(result.as_dict(), indent=2, sort_keys=True))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -315,6 +468,22 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "generate-features":
         return cmd_generate_features(name=args.name, log_level=args.log_level)
+    if args.command == "train-model":
+        return cmd_train_model(
+            feature_set_id=args.feature_set_id,
+            horizon=args.horizon,
+            val_fraction=args.val_fraction,
+            test_fraction=args.test_fraction,
+            log_level=args.log_level,
+        )
+    if args.command == "predict":
+        return cmd_predict(
+            model_version=args.model_version,
+            features=args.features,
+            features_file=args.features_file,
+            forecast_period=args.forecast_period,
+            log_level=args.log_level,
+        )
 
     parser.print_help()
     return 0
