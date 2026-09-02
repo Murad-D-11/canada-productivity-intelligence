@@ -1,22 +1,22 @@
 {
-  "generatedAt": "2026-09-01T20:57:44.122320+00:00",
+  "generatedAt": "2026-09-02T03:39:05.761014+00:00",
   "dataset": {
     "productId": 36100207,
     "tableRef": "36-10-0207-01",
     "title": "Indexes of labour productivity and related measures, by business sector industry, seasonally adjusted"
   },
-  "mode": "INCREMENTAL",
+  "mode": "INITIAL",
   "counts": {
     "downloaded": 29443,
     "inserted": 0,
-    "updated": 0,
-    "duplicates": 29443,
+    "updated": 29443,
+    "duplicates": 0,
     "rejected": 0,
     "missingValues": 11026
   },
   "period": {
-    "earliest": null,
-    "latest": null
+    "earliest": "1981-01-01",
+    "latest": "2026-01-01"
   },
   "industriesDiscovered": 21,
   "measuresDiscovered": 8,
@@ -53,6 +53,6 @@
     "Unit labour cost",
     "Unit labour cost in United States dollars"
   ],
-  "durationSeconds": 2.006,
+  "durationSeconds": 21.657,
   "rejectedSamples": []
 }

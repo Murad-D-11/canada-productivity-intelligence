@@ -1,9 +1,9 @@
 # StatCan Ingestion Report
 
-- Generated: `2026-09-01T20:57:44.122320+00:00`
+- Generated: `2026-09-02T03:39:05.761014+00:00`
 - Dataset: **Indexes of labour productivity and related measures, by business sector industry, seasonally adjusted**
 - Table: `36-10-0207-01` (product ID `36100207`)
-- Mode: `INCREMENTAL`
+- Mode: `INITIAL`
 
 ## Counts
 
@@ -11,16 +11,16 @@
 | --- | ---: |
 | Observations downloaded | 29443 |
 | Inserted | 0 |
-| Updated | 0 |
-| Duplicates skipped | 29443 |
+| Updated | 29443 |
+| Duplicates skipped | 0 |
 | Rejected | 0 |
 | Missing values | 11026 |
 
 ## Coverage
 
-- Earliest period: `None`
-- Latest period: `None`
-- Ingestion duration: `2.006s`
+- Earliest period: `1981-01-01`
+- Latest period: `2026-01-01`
+- Ingestion duration: `21.657s`
 
 ## Industries discovered (21)
 

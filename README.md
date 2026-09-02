@@ -112,37 +112,255 @@ Official Government of Canada sources only:
 
 ## Running locally
 
-Prerequisites: Node ≥ 20, Python ≥ 3.11, Docker (for PostgreSQL).
+Prerequisites: **Node ≥ 20**, **Python ≥ 3.11**, **Docker Desktop** (for
+PostgreSQL). All commands are run from the repository root unless noted.
+
+> Command style: examples use PowerShell/`cmd`-friendly paths (`ml\.venv\Scripts\...`).
+> On macOS/Linux use `ml/.venv/bin/...` instead of `ml\.venv\Scripts\...`.
+
+### First-time setup (once)
+
+**1. Create your environment file.** Copy the template; the defaults already
+work for local development (no secrets are committed).
 
 ```bash
-# 0) Environment
-cp .env.example .env               # fill in local values (no secrets committed)
-
-# 1) Install
-npm install                        # frontend + backend workspaces
-cd ml && python -m venv .venv && .venv/Scripts/pip install -e ".[dev]" && cd ..
-
-# 2) Database
-docker compose up -d postgres      # PostgreSQL on localhost:5432
-npm run prisma:generate            # generate the Prisma client
-# apply migrations (from repo root):
-npx prisma migrate deploy --schema prisma/schema.prisma
-
-# 3) Data + model (Python CLI, from ml/)
-cd ml
-.venv/Scripts/python -m cpi_ml.cli ingest-statcan     # ingest StatCan 36100207
-.venv/Scripts/python -m cpi_ml.cli generate-features  # build the feature matrix
-.venv/Scripts/python -m cpi_ml.cli train-model        # train + select + save artifact
-cd ..
-
-# 4) Run the app
-npm run dev:backend                # API on http://localhost:4000
-npm run dev:frontend               # Web app on http://localhost:5173
+# PowerShell
+Copy-Item .env.example .env
+# cmd
+copy .env.example .env
+# macOS/Linux
+cp .env.example .env
 ```
 
-The backend automatically finds the ML virtualenv (`ml/.venv`) to run the model.
+**2. Install JavaScript dependencies** (frontend + backend workspaces):
 
-### API endpoints
+```bash
+npm install
+```
+
+**3. Create the Python ML environment.** A virtualenv is **not portable** — if
+you moved/copied the project, recreate it here rather than reusing an old one.
+
+```bash
+cd ml
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -e ".[dev]"   # Windows
+# .venv/bin/python -m pip install -e ".[dev]"         # macOS/Linux
+cd ..
+```
+
+> Tip: use `python -m pip ...` (not `pip.exe ...`). It avoids a launcher error
+> if the venv path ever changes.
+
+**4. Start PostgreSQL and apply the schema:**
+
+```bash
+docker compose up -d postgres                          # DB on localhost:5432
+docker ps --filter name=cpi-postgres                   # confirm it is healthy
+npm run prisma:generate                                # generate the Prisma client
+npx prisma migrate deploy --schema prisma/schema.prisma
+```
+
+**5. Load data and train the model** (Python CLI — see the full command
+reference below). At minimum:
+
+```bash
+cd ml
+.venv\Scripts\python.exe -m cpi_ml.cli ingest-statcan       # official productivity data
+.venv\Scripts\python.exe -m cpi_ml.cli generate-features    # build the feature matrix
+.venv\Scripts\python.exe -m cpi_ml.cli train-model          # train, select, save the model
+cd ..
+```
+
+### Run the app (every session)
+
+The database container must be running, then start two processes in two
+terminals:
+
+```bash
+npm run dev:backend     # API   -> http://localhost:4000
+npm run dev:frontend    # Web app -> http://localhost:5173
+```
+
+Open **http://localhost:5173**. The backend automatically finds the ML
+virtualenv (`ml/.venv`) to run the model, so both must exist on the same
+machine. Stop a server with `Ctrl+C`; stop the DB with `docker compose stop
+postgres` (data is preserved) or `docker compose down` (removes the container).
+
+## Operating the pipeline (ML CLI reference)
+
+All pipeline operations run through the `cpi_ml` CLI from the `ml/` directory:
+
+```bash
+cd ml
+.venv\Scripts\python.exe -m cpi_ml.cli <command> [options]
+.venv\Scripts\python.exe -m cpi_ml.cli --help          # list all commands
+.venv\Scripts\python.exe -m cpi_ml.cli <command> --help # options for one command
+```
+
+Every data command hits **live official endpoints** and never fabricates data.
+Commands that touch the database require `DATABASE_URL` (from `.env`) and a
+running Postgres.
+
+### Inspection
+
+```bash
+# Show resolved configuration (endpoints, seed, artifacts dir, DB configured?)
+.venv\Scripts\python.exe -m cpi_ml.cli config
+
+# Show the configured official data sources
+.venv\Scripts\python.exe -m cpi_ml.cli sources
+```
+
+### `ingest-statcan` — productivity data (required)
+
+Ingests Statistics Canada table 36-10-0207-01 (labour productivity and related
+measures) into PostgreSQL and writes a quality report to `docs/reports/`.
+
+```bash
+.venv\Scripts\python.exe -m cpi_ml.cli ingest-statcan
+```
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--product-id <int>` | `36100207` | StatCan product/cube ID to ingest |
+| `--incremental` | off | Only insert observations not already stored (skip duplicates) — use for refreshes |
+| `--log-level <level>` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+
+### `ingest-weather` — weather data (optional)
+
+Ingests Environment and Climate Change Canada (MSC GeoMet) weather observations.
+**Optional** — the forecast model runs without it. If you ingest weather, you
+must re-run `generate-features` and `train-model` for the model to use it.
+
+```bash
+# Quick, capped smoke ingest for a couple of provinces
+.venv\Scripts\python.exe -m cpi_ml.cli ingest-weather --provinces ON,QC --max-per-province 200
+
+# Fuller ingest over a date range
+.venv\Scripts\python.exe -m cpi_ml.cli ingest-weather --start 2015-01-01 --end 2024-12-31
+```
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--collection <id>` | `climate-monthly` | MSC GeoMet collection id |
+| `--period <res>` | `MONTHLY` | Aggregate to `ANNUAL` / `QUARTERLY` / `MONTHLY` |
+| `--provinces <codes>` | all provinces | Comma-separated province codes, e.g. `ON,QC,BC` |
+| `--start <YYYY-MM-DD>` | none | Start date filter |
+| `--end <YYYY-MM-DD>` | none | End date filter |
+| `--max-per-province <int>` | none | Cap records per province (fast smoke ingest) |
+| `--incremental` | off | Skip observations already stored |
+| `--log-level <level>` | `INFO` | Logging verbosity |
+
+> The MSC GeoMet API is external, so weather ingestion needs internet access and
+> can take a while for large ranges. Start small with `--max-per-province`.
+
+### `generate-features` — build the ML feature matrix (required)
+
+Combines the ingested productivity (and weather, if present) data into the
+ML-ready `FeatureSet` / `FeatureRow` tables. Re-run this whenever you ingest new
+data.
+
+```bash
+.venv\Scripts\python.exe -m cpi_ml.cli generate-features
+```
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--name <label>` | `productivity+weather@v1` | Feature-set name recorded for reproducibility |
+| `--log-level <level>` | `INFO` | Logging verbosity |
+
+### `train-model` — train, evaluate, select, save (required)
+
+Trains the candidate models (naive, ridge, random forest), evaluates them with
+chronological validation, selects the best by validation MAE, confirms on a
+held-out test window, and saves a versioned artifact to `ml/artifacts/`. Prints
+the full model comparison.
+
+```bash
+.venv\Scripts\python.exe -m cpi_ml.cli train-model
+```
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--feature-set-id <id>` | most recent | Train on a specific feature set |
+| `--horizon <int>` | `1` | Forecast horizon in quarters ahead |
+| `--val-fraction <float>` | `0.2` | Share of the time span used for validation |
+| `--test-fraction <float>` | `0.2` | Share of the time span used for the held-out test |
+| `--log-level <level>` | `INFO` | Logging verbosity |
+
+### `predict` — one-off forecast from the trained model
+
+Runs the saved model on a feature vector and prints a structured JSON forecast.
+(The web app does this for you; this is for scripting/debugging.)
+
+```bash
+.venv\Scripts\python.exe -m cpi_ml.cli predict --features "{\"prodLag1\": 105.2, \"prodLag4\": 103.1, \"prodRollMean4\": 104.0, \"employmentGrowth\": 0.004, \"labourCostGrowth\": 0.011, \"quarter\": 2, \"month\": 4}"
+# or from a file:
+.venv\Scripts\python.exe -m cpi_ml.cli predict --features-file features.json --forecast-period 2026-Q2
+```
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--features <json>` | — | Feature values as a JSON object |
+| `--features-file <path>` | — | JSON file with feature values (alternative to `--features`) |
+| `--model-version <id>` | latest | Use a specific trained model version |
+| `--forecast-period <label>` | none | Label recorded in the output |
+| `--log-level <level>` | `WARNING` | Logging verbosity |
+
+### `explain` — model contributions for a forecast
+
+Prints the per-feature contributions behind a forecast (association, not
+causation), or the global feature importance.
+
+```bash
+# Per-forecast drivers
+.venv\Scripts\python.exe -m cpi_ml.cli explain --features-file features.json
+# Global importance only (no feature vector needed)
+.venv\Scripts\python.exe -m cpi_ml.cli explain --global
+```
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--global` | off | Show only global feature importance |
+| `--features <json>` / `--features-file <path>` | — | Feature values for a per-forecast explanation |
+| `--model-version <id>` | latest | Explain a specific model version |
+| `--forecast-period <label>` | none | Label recorded in the output |
+| `--log-level <level>` | `WARNING` | Logging verbosity |
+
+### Typical workflows
+
+```bash
+# Refresh productivity data and retrain end-to-end
+.venv\Scripts\python.exe -m cpi_ml.cli ingest-statcan --incremental
+.venv\Scripts\python.exe -m cpi_ml.cli generate-features
+.venv\Scripts\python.exe -m cpi_ml.cli train-model
+
+# Add weather, then rebuild features + model so the model can use it
+.venv\Scripts\python.exe -m cpi_ml.cli ingest-weather --provinces ON,QC,BC
+.venv\Scripts\python.exe -m cpi_ml.cli generate-features
+.venv\Scripts\python.exe -m cpi_ml.cli train-model
+```
+
+## Using the web app
+
+The UI follows one coherent flow, top to bottom:
+
+1. **Canada Overview** — national snapshot plus a table of all industries ranked
+   by the model's predicted next-quarter change. Click an industry to drill in.
+2. **Forecast** — pick an industry and press **Generate Forecast** to see current
+   vs forecast productivity, the expected change, the observed-vs-forecast chart,
+   and **"What is driving this forecast?"** (expand a driver for its value, unit,
+   and source).
+3. **Test a Scenario** — adjust eligible inputs (e.g. `employmentGrowth`), press
+   **Simulate**, and compare baseline vs scenario. **Reset to baseline** restores
+   the real observed values.
+4. **Methodology** — data sources, the pipeline, and the model's real metrics.
+5. **Data Status** — live ingestion coverage and freshness.
+
+## API endpoints
+
+The frontend talks to these (all under `http://localhost:4000`):
 
 - `GET  /api/v1/overview` — industry comparison ranked by predicted change
 - `POST /api/v1/forecast` — one-step-ahead forecast + top drivers for an industry
@@ -151,15 +369,44 @@ The backend automatically finds the ML virtualenv (`ml/.venv`) to run the model.
 - `POST /api/v1/scenarios/simulate` — baseline vs scenario forecast
 - `GET  /api/v1/data/status` — ingestion coverage and freshness
 - plus `GET /api/v1/industries`, `/measures`, `/productivity/history`
+- `GET  /healthz` — liveness check
+
+Example forecast request:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/forecast \
+  -H "content-type: application/json" \
+  -d '{"industry":"Agriculture, forestry, fishing and hunting","geography":"Canada","horizon":1}'
+```
 
 ## Quality checks
 
 ```bash
 npm run typecheck                          # TypeScript across workspaces
 npm run lint                               # ESLint
-npm test --workspace @cpi/backend          # Backend tests (Vitest; needs DB + model)
-cd ml && pytest                            # ML tests
+npm test --workspace backend               # Backend tests (Vitest; needs DB + model)
+cd ml && .venv\Scripts\python.exe -m pytest # ML tests
 ```
+
+## Troubleshooting
+
+- **`copy`/`Copy-Item` not recognized** — you're in the other shell. Use `copy`
+  in cmd, `Copy-Item` in PowerShell.
+- **Overwrite prompt when copying `.env`** — a `.env` already exists; answer `no`
+  to keep your current config.
+- **`Fatal error in launcher ... python.exe: The system cannot find the file`** —
+  the Python venv was created at a different path (e.g. the project was moved).
+  Delete and recreate it: `rmdir /s /q ml\.venv` then redo setup step 3.
+- **Forecast/overview returns 503 or "model service unavailable"** — no trained
+  model or the ML venv is missing. Run `train-model` (and `generate-features`
+  before it, which needs `ingest-statcan` first), and ensure `ml/.venv` exists.
+- **Backend can't reach the database** — confirm `docker ps` shows
+  `cpi-postgres` healthy and `DATABASE_URL` in `.env` is correct.
+- **"No weather data available ... Ingest weather to populate this overlay"** —
+  expected; weather is optional and not ingested by default. Run `ingest-weather`
+  if you want the overlay (see the CLI reference).
+- **Forecasts take a couple of seconds** — expected; each spawns a short-lived
+  Python process to run the model.
 
 ## Limitations
 
@@ -177,6 +424,7 @@ cd ml && pytest                            # ML tests
 - **No fabricated uncertainty.** Only point forecasts and real backtest error are
   shown; no invented confidence bands.
 
+<<<<<<< HEAD
 ## Two-minute demo
 
 1. "Canada has a productivity problem — and the public data to study it is scattered and hard to use."
@@ -195,6 +443,8 @@ Use *Business sector, goods* or *Agriculture, forestry, fishing and hunting* for
 
 ## Talking points
 
+=======
+>>>>>>> 3420b6362ee3f4879ad2e66b54340195c3badda8
 ### Three technical points
 
 - **Temporal leakage prevention.** Every feature is past-only (`shift(1)`), and
