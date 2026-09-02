@@ -424,7 +424,6 @@ cd ml && .venv\Scripts\python.exe -m pytest # ML tests
 - **No fabricated uncertainty.** Only point forecasts and real backtest error are
   shown; no invented confidence bands.
 
-<<<<<<< HEAD
 
 ### Three technical points
 
