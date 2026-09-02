@@ -1,54 +1,92 @@
-import {
-  PageHeader,
-  Card,
-  CardHeader,
-  CardBody,
-  EmptyState,
-  StatTile,
-  Button,
-  Badge,
-} from '../components/ui';
+import { useEffect, useState } from 'react';
+import { PageHeader, Card, CardBody, EmptyState, Select, Badge } from '../components/ui';
+import { ScenarioSimulator } from '../components/ScenarioSimulator';
+import { fetchIndustries, type Industry } from '../lib/statcanApi';
 
-/** What-if scenario simulator (design shell). */
+type LoadState = 'loading' | 'ready' | 'error';
+
+const GEOGRAPHY = 'Canada';
+const HORIZON = 1;
+
+/**
+ * Standalone what-if scenario simulator. Reuses the same ScenarioSimulator
+ * component embedded in the Forecast page, driven by real feature metadata and
+ * the trained model. Pick an industry, adjust eligible inputs, and compare the
+ * model's baseline vs scenario forecast. Nothing here is fabricated.
+ */
 export function ScenarioSimulatorPage() {
+  const [industries, setIndustries] = useState<Industry[]>([]);
+  const [industryName, setIndustryName] = useState<string | null>(null);
+  const [state, setState] = useState<LoadState>('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchIndustries()
+      .then((inds) => {
+        if (cancelled) return;
+        setIndustries(inds);
+        const def = inds.find((i) => /business sector|total economy/i.test(i.name)) ?? inds[0];
+        setIndustryName(def?.name ?? null);
+        setState('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setState('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <>
       <PageHeader
         title="Scenario Simulator"
-        description="Explore model-implied outcomes under what-if adjustments to inputs."
-        actions={<Badge tone="caution">Model-implied, not guaranteed</Badge>}
+        description="Adjust eligible model inputs for an industry and compare the model's baseline vs scenario forecast."
+        actions={<Badge tone="caution">Model-based scenario, not causal</Badge>}
       />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <CardHeader title="Adjustments" description="Set input changes to simulate." />
-          <CardBody className="space-y-4">
-            <EmptyState
-              title="Controls unavailable"
-              description="Adjustment sliders populate from model features once training is complete."
-            />
-            <Button className="w-full" disabled>
-              Run scenario
-            </Button>
+      {state === 'loading' ? (
+        <Card>
+          <CardBody>
+            <EmptyState title="Loading…" description="Fetching supported industries." />
           </CardBody>
         </Card>
-
-        <div className="space-y-4 lg:col-span-2">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <StatTile label="Baseline" value="—" hint="Current model estimate" />
-            <StatTile label="Simulated" value="—" hint="Under your adjustments" />
-          </div>
+      ) : state === 'error' ? (
+        <Card>
+          <CardBody>
+            <EmptyState
+              title="Couldn't load industries"
+              description="The backend API is unreachable. Ensure it is running and data is ingested."
+            />
+          </CardBody>
+        </Card>
+      ) : (
+        <>
           <Card>
-            <CardHeader title="Outcome" description="Baseline vs. simulated comparison." />
             <CardBody>
-              <EmptyState
-                title="No scenario run"
-                description="Results appear after a scenario is submitted against a trained model."
+              <Select
+                label="Industry"
+                value={industryName ?? ''}
+                onChange={(e) => setIndustryName(e.target.value)}
+                options={industries.map((i) => ({ value: i.name, label: i.name }))}
               />
+              <p className="mt-2 text-xs text-content-subtle">
+                Geography: Canada (national) · Horizon: 1 quarter ahead.
+              </p>
             </CardBody>
           </Card>
-        </div>
-      </div>
+
+          {industryName ? (
+            <ScenarioSimulator
+              key={industryName}
+              industry={industryName}
+              geography={GEOGRAPHY}
+              horizon={HORIZON}
+            />
+          ) : null}
+        </>
+      )}
     </>
   );
 }

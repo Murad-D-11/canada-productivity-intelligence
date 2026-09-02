@@ -38,9 +38,9 @@ export function AppLayout() {
           ))}
         </nav>
         <div className="border-t border-border px-5 py-4">
-          <Badge tone="caution">Prototype</Badge>
+          <Badge tone="info">Real data + model</Badge>
           <p className="mt-2 text-xs text-content-subtle">
-            Design shell. Not yet connected to live data.
+            Statistics Canada productivity data and a trained forecasting model.
           </p>
         </div>
       </aside>

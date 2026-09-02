@@ -16,12 +16,12 @@ export const navItems: NavItem[] = [
   {
     path: '/forecast',
     label: 'Forecast',
-    summary: 'Model forecasts with prediction intervals and backtest context.',
+    summary: 'One-step-ahead labour productivity forecasts with real backtest context.',
   },
   {
     path: '/drivers',
     label: 'Drivers',
-    summary: 'Feature attributions associated with productivity changes.',
+    summary: 'Model contributions behind each forecast (association, not causation).',
   },
   {
     path: '/scenario',

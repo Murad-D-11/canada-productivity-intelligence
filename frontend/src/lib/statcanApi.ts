@@ -59,6 +59,20 @@ export interface DataStatus {
     releaseTime: string | null;
   };
   counts?: { industries: number; measures: number; observations: number };
+  supported?: { industries: number; geographies: string[] };
+  productivity?: { latestObservationPeriod: string | null; latestObservationDate: string | null };
+  weather?: {
+    observations: number;
+    latestObservationPeriod: string | null;
+    latestObservationDate: string | null;
+  };
+  features?: {
+    id: string;
+    name: string;
+    periodCutoff: string;
+    rowCount: number;
+    generatedAt: string;
+  } | null;
   lastIngestion?: Record<string, unknown> | null;
 }
 
