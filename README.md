@@ -24,7 +24,7 @@ A working prototype that:
 - lets users run what-if scenarios on eligible inputs,
 - and presents it as a clean economic-intelligence web app.
 
-## Growing Canada connection
+## Growing Canada connection (i.e. theme of the project)
 
 Productivity growth is the foundation of long-run living standards, and Canada's
 productivity has lagged. This tool makes the public data legible: it shows the
