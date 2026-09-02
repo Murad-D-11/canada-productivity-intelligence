@@ -42,6 +42,11 @@ const simulateSchema = z.object({
   changedFeatures: z.record(z.string(), z.number()).default({}),
 });
 
+const eligibleQuerySchema = z.object({
+  industry: z.string().min(1, 'industry is required'),
+  geography: z.string().min(1).default('Canada'),
+});
+
 function parseBody<T extends z.ZodTypeAny>(schema: T, req: Request): z.infer<T> {
   const result = schema.safeParse(req.body);
   if (!result.success) {
@@ -52,6 +57,57 @@ function parseBody<T extends z.ZodTypeAny>(schema: T, req: Request): z.infer<T> 
   }
   return result.data;
 }
+
+function parseQuery<T extends z.ZodTypeAny>(schema: T, req: Request): z.infer<T> {
+  const result = schema.safeParse(req.query);
+  if (!result.success) {
+    throw new HttpError(
+      400,
+      `Invalid query parameters: ${result.error.issues.map((i) => i.message).join('; ')}`,
+    );
+  }
+  return result.data;
+}
+
+// GET /api/v1/scenarios/features --------------------------------------------
+// Lists the scenario-eligible features for a series, each with its real current
+// (baseline) value and the metadata-defined unit, source, and allowed range.
+// The frontend renders controls from this — it never invents controllable
+// variables or bounds. Ineligible/immutable features are excluded.
+scenariosRouter.get(
+  '/features',
+  asyncHandler(async (req: Request, res: Response) => {
+    const q = parseQuery(eligibleQuerySchema, req);
+    const meta = await getFeatureMetadata();
+    const ctx = await loadFeatureContext(q.industry, q.geography);
+
+    const features = meta.scenario_eligible
+      .map((name) => {
+        const fm = meta.features[name];
+        if (!fm) return null;
+        return {
+          feature: name,
+          displayName: fm.display_name,
+          unit: fm.unit,
+          description: fm.description,
+          source: fm.source,
+          sourceTable: fm.source_table,
+          min: fm.reasonable_min,
+          max: fm.reasonable_max,
+          currentValue: (ctx.features as Record<string, number | null>)[name] ?? null,
+        };
+      })
+      .filter((f): f is NonNullable<typeof f> => f !== null);
+
+    res.json({
+      industry: ctx.industry,
+      geography: ctx.geography,
+      basePeriod: ctx.basePeriod,
+      basePeriodStart: ctx.basePeriodStart,
+      features,
+    });
+  }),
+);
 
 // POST /api/v1/scenarios/simulate --------------------------------------------
 scenariosRouter.post(

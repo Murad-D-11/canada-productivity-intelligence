@@ -10,6 +10,7 @@ import {
   type ObservationPoint,
 } from '../lib/statcanApi';
 import { generateForecast, type ForecastResult, type ForecastDriver } from '../lib/forecastApi';
+import { ScenarioSimulator } from '../components/ScenarioSimulator';
 
 type LoadState = 'loading' | 'ready' | 'error';
 type ForecastState = 'idle' | 'loading' | 'ready' | 'error';
@@ -320,6 +321,13 @@ function ForecastResultView({ forecast, history, expandedDriver, onToggleDriver 
           <p className="pt-2 text-xs text-content-subtle">{forecast.disclaimer}</p>
         </CardBody>
       </Card>
+
+      {/* Scenario simulator — reuses this forecast's industry/geography/horizon */}
+      <ScenarioSimulator
+        industry={forecast.industry}
+        geography={forecast.geography}
+        horizon={forecast.horizon}
+      />
     </>
   );
 }
