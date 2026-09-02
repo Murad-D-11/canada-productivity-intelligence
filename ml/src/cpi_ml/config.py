@@ -6,8 +6,26 @@ same code runs locally, in Docker, and in CI without modification.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _candidate_env_files() -> list[str]:
+    """Return .env locations to load, in priority order.
+
+    We look at the current working directory first (so per-service overrides
+    work), then walk up to the repository root. This makes configuration robust
+    regardless of which directory the CLI is invoked from.
+    """
+    candidates: list[str] = [".env"]
+    here = Path(__file__).resolve()
+    # ml/src/cpi_ml/config.py -> repo root is parents[3].
+    for parent in list(here.parents)[:5]:
+        env_path = parent / ".env"
+        candidates.append(str(env_path))
+    return candidates
 
 
 class Settings(BaseSettings):
@@ -17,7 +35,7 @@ class Settings(BaseSettings):
     endpoints. They are configurable so tests can target mock servers.
     """
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_candidate_env_files(), extra="ignore")
 
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
 

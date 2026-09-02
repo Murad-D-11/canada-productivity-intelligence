@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-09-01T20:57:44.122320+00:00",
+  "dataset": {
+    "productId": 36100207,
+    "tableRef": "36-10-0207-01",
+    "title": "Indexes of labour productivity and related measures, by business sector industry, seasonally adjusted"
+  },
+  "mode": "INCREMENTAL",
+  "counts": {
+    "downloaded": 29443,
+    "inserted": 0,
+    "updated": 0,
+    "duplicates": 29443,
+    "rejected": 0,
+    "missingValues": 11026
+  },
+  "period": {
+    "earliest": null,
+    "latest": null
+  },
+  "industriesDiscovered": 21,
+  "measuresDiscovered": 8,
+  "industries": [
+    "Accommodation and food services",
+    "Administrative and support, waste management and remediation services",
+    "Agriculture, forestry, fishing and hunting",
+    "Arts, entertainment and recreation",
+    "Business sector, goods",
+    "Business sector, services",
+    "Construction",
+    "Finance and insurance, and holding companies",
+    "Finance, real estate and company management",
+    "Information and cultural industries",
+    "Manufacturing",
+    "Mining and oil and gas extraction",
+    "Non-business sector",
+    "Other business services",
+    "Professional, scientific and technical services",
+    "Real estate and rental and leasing",
+    "Retail trade",
+    "Total economy",
+    "Transportation and warehousing",
+    "Utilities",
+    "Wholesale trade"
+  ],
+  "measures": [
+    "Average hours worked",
+    "Hours worked",
+    "Labour productivity",
+    "Real gross domestic product (GDP)",
+    "Total compensation per hour worked",
+    "Total number of jobs",
+    "Unit labour cost",
+    "Unit labour cost in United States dollars"
+  ],
+  "durationSeconds": 2.006,
+  "rejectedSamples": []
+}

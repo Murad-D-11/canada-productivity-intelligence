@@ -1,8 +1,14 @@
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 
-// Load .env from the repo root (one level above backend) if present.
-loadDotenv();
+// Load .env. Prefer the repo-root .env (one level above backend) so the same
+// file configures every service; fall back to the current working directory.
+const here = dirname(fileURLToPath(import.meta.url));
+const rootEnv = resolve(here, '../../../.env');
+loadDotenv(existsSync(rootEnv) ? { path: rootEnv } : undefined);
 
 /**
  * Environment schema. Values are validated at startup so the service fails

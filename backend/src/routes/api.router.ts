@@ -12,11 +12,15 @@ export const apiRouter = Router();
 
 apiRouter.use(metaRouter);
 
-/** Endpoints planned for the analytics surface, with their intended purpose. */
+/**
+ * Endpoints planned for the analytics surface, with their intended purpose.
+ *
+ * Ingested StatCan data is served under `/api/v1` (industries, measures,
+ * productivity/history, data/status). The endpoints below are downstream ML
+ * features that are still forthcoming; they remain explicit 501s so the
+ * contract is discoverable without fabricating data.
+ */
 const plannedEndpoints: Array<{ method: string; path: string; description: string }> = [
-  { method: 'GET', path: '/industries', description: 'List NAICS industries available in the dataset.' },
-  { method: 'GET', path: '/geographies', description: 'List national/provincial/territorial geographies.' },
-  { method: 'GET', path: '/observations', description: 'Query observed productivity series (as published).' },
   { method: 'GET', path: '/forecasts', description: 'Retrieve model forecasts with prediction intervals.' },
   { method: 'GET', path: '/drivers', description: 'Retrieve SHAP-based driver attributions (association).' },
   { method: 'POST', path: '/scenarios', description: 'Run a what-if scenario simulation.' },

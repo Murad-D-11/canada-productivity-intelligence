@@ -205,3 +205,213 @@ model ScenarioRun {
 
   @@index([geographyId, industryId, measure])
 }
+
+// ===========================================================================
+// Statistics Canada data pipeline (Master Prompt 2)
+//
+// Normalized tables for ingested StatCan cube data (e.g. table 36-10-0207-01,
+// product ID 36100207 — Labour productivity and related measures by business
+// sector industry). These are kept separate from the forecasting models above
+// so ingested source-of-truth observations are never confused with model
+// outputs. Every observation preserves its ORIGINAL StatCan identifiers
+// (coordinate, vectorId, member IDs) so provenance is fully auditable.
+// ===========================================================================
+
+/// A StatCan cube/table that has been (or can be) ingested.
+model StatCanDataset {
+  id           String   @id @default(cuid())
+  /// StatCan Product ID (PID), e.g. 36100207. Unique per cube.
+  productId    Int      @unique
+  /// Human-readable cube title as published by StatCan.
+  title        String
+  /// Original table reference number, e.g. "36-10-0207-01".
+  tableRef     String?
+  /// Publishing frequency code from cube metadata (raw), plus a normalized enum.
+  frequencyCode Int?
+  frequency    PeriodType?
+  /// Cube coverage as reported by metadata.
+  startDate    DateTime?
+  endDate      DateTime?
+  /// Timestamp StatCan last released/updated the cube (releaseTime).
+  releaseTime  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  industries    StatCanIndustry[]
+  geographies   StatCanGeography[]
+  measures      StatCanMeasure[]
+  observations  StatCanObservation[]
+  metadata      SourceMetadata[]
+  ingestionRuns IngestionRun[]
+}
+
+/// An industry member discovered from cube metadata (never hardcoded).
+model StatCanIndustry {
+  id          String   @id @default(cuid())
+  datasetId   String
+  /// StatCan dimension member id within the industry dimension.
+  memberId    Int
+  /// Full member name exactly as published by StatCan.
+  name        String
+  /// StatCan classification code (e.g. NAICS code) if present in metadata.
+  classificationCode String?
+  /// Parent member id for hierarchy navigation (nullable at top level).
+  parentMemberId Int?
+  createdAt   DateTime @default(now())
+
+  dataset      StatCanDataset       @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  observations StatCanObservation[]
+
+  @@unique([datasetId, memberId])
+  @@index([datasetId])
+  @@index([name])
+}
+
+/// A geography member discovered from cube metadata.
+model StatCanGeography {
+  id          String   @id @default(cuid())
+  datasetId   String
+  memberId    Int
+  name        String
+  /// StatCan geographic classification code (SGC) if present.
+  classificationCode String?
+  createdAt   DateTime @default(now())
+
+  dataset      StatCanDataset       @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  observations StatCanObservation[]
+
+  @@unique([datasetId, memberId])
+  @@index([datasetId])
+  @@index([name])
+}
+
+/// A measure member (e.g. "Labour productivity", "Hours worked").
+model StatCanMeasure {
+  id          String   @id @default(cuid())
+  datasetId   String
+  memberId    Int
+  name        String
+  /// Unit of measure code + label from cube metadata (uomCode / member unit).
+  unitOfMeasure String?
+  createdAt   DateTime @default(now())
+
+  dataset      StatCanDataset       @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  observations StatCanObservation[]
+
+  @@unique([datasetId, memberId])
+  @@index([datasetId])
+  @@index([name])
+}
+
+/// A single ingested observation from a StatCan cube.
+/// Uniqueness is by the natural key (dataset + coordinate + reference period).
+model StatCanObservation {
+  id           String   @id @default(cuid())
+  datasetId    String
+  industryId   String
+  geographyId  String
+  measureId    String
+
+  /// Normalized period start date (first day of the reference period).
+  periodStart  DateTime
+  /// Normalized period label, e.g. "2019" (annual) or "2019-Q1" (quarterly).
+  periodLabel  String
+  periodType   PeriodType
+
+  /// The published numeric value. Null means genuinely not released / suppressed.
+  value        Float?
+  /// Unit of measure label for this observation.
+  unit         String
+
+  // --- Original StatCan identifiers (never lost) -------------------------
+  /// Full coordinate string, e.g. "1.1.1.0.0.0.0.0.0.0".
+  coordinate   String
+  /// StatCan vector id for this series, if resolvable.
+  vectorId     Int?
+  /// Raw reference period string as published, e.g. "2019" or "2019/01".
+  refPeriodRaw String
+  /// StatCan status/symbol code preserved verbatim (suppressed, revised, etc.).
+  statusCode   String?
+  symbolCode   String?
+  /// Scalar factor code (units scaling) preserved from source.
+  scalarFactorCode Int?
+
+  // --- Provenance --------------------------------------------------------
+  retrievedAt  DateTime
+  ingestedAt   DateTime @default(now())
+  ingestionRunId String?
+
+  dataset      StatCanDataset   @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  industry     StatCanIndustry  @relation(fields: [industryId], references: [id], onDelete: Cascade)
+  geography    StatCanGeography @relation(fields: [geographyId], references: [id], onDelete: Cascade)
+  measure      StatCanMeasure   @relation(fields: [measureId], references: [id], onDelete: Cascade)
+  ingestionRun IngestionRun?    @relation(fields: [ingestionRunId], references: [id])
+
+  @@unique([datasetId, coordinate, periodStart])
+  @@index([periodStart])
+  @@index([industryId])
+  @@index([geographyId])
+  @@index([measureId])
+  @@index([datasetId, measureId, periodStart])
+}
+
+/// Raw cube metadata snapshot (dimensions, members, footnotes) as discovered.
+/// Stored as JSON so nothing from the source is lost, plus summary columns.
+model SourceMetadata {
+  id            String   @id @default(cuid())
+  datasetId     String
+  /// The WDS method that produced this snapshot, e.g. "getCubeMetadata".
+  sourceMethod  String
+  /// Full metadata payload from StatCan, preserved verbatim.
+  payload       Json
+  /// Convenience summary counts.
+  dimensionCount Int
+  memberCount    Int
+  retrievedAt   DateTime @default(now())
+
+  dataset StatCanDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@index([datasetId])
+}
+
+/// Records each ingestion attempt with quality metrics for auditing.
+model IngestionRun {
+  id             String        @id @default(cuid())
+  datasetId      String
+  status         IngestionStatus @default(RUNNING)
+  /// INITIAL (full history) or INCREMENTAL.
+  mode           IngestionMode
+  startedAt      DateTime      @default(now())
+  finishedAt     DateTime?
+
+  // --- Quality metrics ---------------------------------------------------
+  observationsDownloaded Int @default(0)
+  observationsInserted   Int @default(0)
+  observationsUpdated    Int @default(0)
+  duplicatesSkipped      Int @default(0)
+  rowsRejected           Int @default(0)
+  missingValues          Int @default(0)
+  earliestPeriod DateTime?
+  latestPeriod   DateTime?
+  industriesDiscovered Int @default(0)
+  measuresDiscovered   Int @default(0)
+  durationSeconds Float?
+  /// Free-form error message if the run failed.
+  errorMessage   String?
+
+  dataset      StatCanDataset       @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  observations StatCanObservation[]
+
+  @@index([datasetId, startedAt])
+}
+
+enum IngestionStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum IngestionMode {
+  INITIAL
+  INCREMENTAL
+}

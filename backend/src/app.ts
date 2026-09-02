@@ -7,6 +7,7 @@ import { logger } from './config/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { apiRouter } from './routes/api.router.js';
 import { healthRouter } from './routes/health.route.js';
+import { v1Router } from './routes/v1.router.js';
 
 /**
  * Builds and configures the Express application. Factored out from server
@@ -23,7 +24,10 @@ export function createApp(): Express {
   // Health endpoints live at the root (not under /api).
   app.use('/', healthRouter);
 
-  // Versioned API surface.
+  // Versioned StatCan data API (real ingested data).
+  app.use('/api/v1', v1Router);
+
+  // Legacy/meta API surface (service metadata, planned-endpoint contract).
   app.use('/api', apiRouter);
 
   app.use(notFoundHandler);

@@ -17,6 +17,18 @@ export const notFoundHandler: RequestHandler = (req, res) => {
   res.status(404).json({ error: 'Not Found', path: req.originalUrl });
 };
 
+/**
+ * Wraps an async route handler so that rejected promises are forwarded to the
+ * Express error handler via `next`. Express 4 does not catch async errors
+ * automatically, so without this an async handler that throws leaves the
+ * request hanging until the client (or test) times out.
+ */
+export const asyncHandler =
+  (handler: RequestHandler): RequestHandler =>
+  (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch(next);
+  };
+
 /** Centralized error handler. Keeps responses consistent and logs details. */
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   const status = err instanceof HttpError ? err.statusCode : 500;
