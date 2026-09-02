@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageHeader, Card, CardHeader, CardBody, EmptyState, Select, Button, Badge, StatTile } from '../components/ui';
 import { ForecastChart } from '../components/charts/ForecastChart';
 import {
@@ -57,6 +58,9 @@ export function ForecastPage() {
   const [history, setHistory] = useState<ObservationPoint[]>([]);
   const [expandedDriver, setExpandedDriver] = useState<string | null>(null);
 
+  const [searchParams] = useSearchParams();
+  const requestedIndustry = searchParams.get('industry');
+
   // Load industries + resolve the Labour productivity measure once.
   useEffect(() => {
     let cancelled = false;
@@ -65,8 +69,13 @@ export function ForecastPage() {
       .then(([inds, meas]) => {
         if (cancelled) return;
         setIndustries(inds);
+        // Preselect a drill-down industry from the URL when it matches a real
+        // ingested industry; otherwise fall back to a sensible default.
+        const fromUrl = requestedIndustry
+          ? inds.find((i) => i.name === requestedIndustry)
+          : undefined;
         const defaultIndustry =
-          inds.find((i) => /total economy|business sector/i.test(i.name)) ?? inds[0];
+          fromUrl ?? inds.find((i) => /total economy|business sector/i.test(i.name)) ?? inds[0];
         setIndustryName(defaultIndustry?.name ?? null);
         const lp = meas.find((m: Measure) => /^labour productivity$/i.test(m.name)) ?? meas[0];
         setMeasureId(lp?.memberId ?? null);
@@ -80,7 +89,7 @@ export function ForecastPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [requestedIndustry]);
 
   // Reset a stale forecast when the selection changes.
   useEffect(() => {

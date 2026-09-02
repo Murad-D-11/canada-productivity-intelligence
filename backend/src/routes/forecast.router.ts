@@ -3,11 +3,14 @@ import { z } from 'zod';
 import { asyncHandler, HttpError } from '../middleware/errorHandler.js';
 import {
   getModelInfo,
+  loadAllIndustryContexts,
   loadFeatureContext,
   nextQuarterLabel,
   runForecast,
+  runPredictionBatch,
   SUPPORTED_HORIZONS,
   TARGET_MEASURE,
+  type BatchItem,
 } from '../services/forecastService.js';
 
 /**
@@ -107,6 +110,74 @@ forecastRouter.post(
       },
       disclaimer: explanation.disclaimer,
       limitations: LIMITATIONS,
+    });
+  }),
+);
+
+// GET /api/v1/overview -------------------------------------------------------
+// A real, one-request industry comparison for the national overview. Forecasts
+// every industry's next-quarter labour productivity in a single model process
+// and returns rows sorted by the model's predicted change. This is explicitly a
+// ranking by predicted change — not an "opportunity score" or investment signal.
+forecastRouter.get(
+  '/overview',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const { featureSetName, contexts } = await loadAllIndustryContexts('Canada');
+    if (contexts.length === 0) {
+      throw new HttpError(404, 'No industry feature data available to build an overview.');
+    }
+
+    const items: BatchItem[] = contexts.map((c) => ({
+      id: c.industry,
+      features: c.features,
+      forecast_period: nextQuarterLabel(c.basePeriodStart, 1),
+    }));
+    const predictions = await runPredictionBatch(items);
+    const byId = new Map(predictions.map((p) => [p.id, p.prediction]));
+
+    const rows = contexts
+      .map((c) => {
+        const pred = byId.get(c.industry);
+        if (!pred) return null;
+        const current = c.currentObserved;
+        const forecast = pred.prediction;
+        const absoluteChange = current !== null ? forecast - current : null;
+        const percentChange =
+          current !== null && current !== 0 ? (absoluteChange! / current) * 100 : null;
+        return {
+          industry: c.industry,
+          geography: c.geography,
+          basePeriod: c.basePeriod,
+          forecastPeriod: nextQuarterLabel(c.basePeriodStart, 1),
+          currentObservedProductivity: current,
+          forecastProductivity: forecast,
+          absolutePredictedChange: absoluteChange,
+          percentagePredictedChange: percentChange,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+      // Rank by the model's predicted percentage change (nulls last).
+      .sort((a, b) => {
+        const av = a.percentagePredictedChange;
+        const bv = b.percentagePredictedChange;
+        if (av === null && bv === null) return 0;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return bv - av;
+      });
+
+    res.json({
+      target: TARGET_MEASURE,
+      geography: 'Canada',
+      resolution: 'QUARTERLY',
+      horizon: 1,
+      rankingBasis: 'model_predicted_percentage_change_next_quarter',
+      rankingNote:
+        'Ranked by the model\'s predicted next-quarter percentage change. This is a model projection, ' +
+        'not an opportunity score or investment recommendation.',
+      featureSet: featureSetName,
+      industries: rows,
+      count: rows.length,
     });
   }),
 );

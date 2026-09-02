@@ -38,11 +38,24 @@ function resolvePython(): string {
 const PYTHON = resolvePython();
 const BRIDGE_TIMEOUT_MS = 30_000;
 
-export type BridgeAction = 'predict' | 'explain' | 'forecast' | 'model_info' | 'feature_metadata';
+export type BridgeAction =
+  | 'predict'
+  | 'explain'
+  | 'forecast'
+  | 'predict_batch'
+  | 'model_info'
+  | 'feature_metadata';
+
+export interface BridgeBatchItem {
+  id: string;
+  features: Record<string, number | null>;
+  forecast_period?: string | null;
+}
 
 export interface BridgeRequest {
   action: BridgeAction;
   features?: Record<string, number | null>;
+  items?: BridgeBatchItem[];
   model_version?: string;
   forecast_period?: string | null;
 }

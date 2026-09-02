@@ -92,6 +92,23 @@ def handle(request: dict[str, Any]) -> dict:
     if action == "feature_metadata":
         return {"ok": True, "result": _feature_metadata()}
 
+    if action == "predict_batch":
+        # Predict many labeled feature vectors in ONE process (model loaded
+        # once). Used by the overview comparison so N industries cost a single
+        # process spawn instead of N. Each item: {id, features, forecast_period?}.
+        items = request.get("items")
+        if not isinstance(items, list) or not items:
+            return _error("items list is required", code="missing_features")
+        forecaster = _load_forecaster(model_version)
+        predictions: list[dict[str, Any]] = []
+        for item in items:
+            feats = item.get("features") or {}
+            if not isinstance(feats, dict) or not feats:
+                continue  # skip items without features rather than fabricate
+            pred = forecaster.predict(feats, forecast_period=item.get("forecast_period"))
+            predictions.append({"id": item.get("id"), "prediction": pred.as_dict()})
+        return {"ok": True, "result": {"predictions": predictions}}
+
     if action in {"predict", "explain", "forecast"}:
         if not isinstance(features, dict) or not features:
             return _error("features mapping is required", code="missing_features")

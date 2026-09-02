@@ -213,6 +213,101 @@ export async function runPrediction(
   return out.prediction;
 }
 
+export interface BatchItem {
+  id: string;
+  features: FeatureVector;
+  forecast_period: string | null;
+}
+
+export interface BatchPredictionResult {
+  id: string;
+  prediction: PredictionPayload;
+}
+
+/**
+ * Predict many labeled feature vectors in a SINGLE Python process (the model is
+ * loaded once). Used by the overview comparison so N industries cost one process
+ * spawn instead of N.
+ */
+export async function runPredictionBatch(items: BatchItem[]): Promise<BatchPredictionResult[]> {
+  if (items.length === 0) return [];
+  const out = await callBridge<{ predictions: BatchPredictionResult[] }>({
+    action: 'predict_batch',
+    items,
+  });
+  return out.predictions;
+}
+
+/**
+ * Load the latest feature row for EVERY (industry) series in the newest feature
+ * set for the target measure + geography. Returns the real feature vectors the
+ * model needs, plus each series' observed current value and base period. This
+ * lets the overview build a real, one-request industry comparison.
+ */
+export async function loadAllIndustryContexts(
+  geography = 'Canada',
+): Promise<{ featureSetName: string; contexts: FeatureContext[] }> {
+  const featureSet = await prisma.featureSet.findFirst({
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, name: true },
+  });
+  if (!featureSet) {
+    throw new HttpError(
+      503,
+      'No feature set has been generated yet. Run the ML feature pipeline first.',
+    );
+  }
+
+  // All rows for the target measure + geography, newest period per industry.
+  const rows = await prisma.featureRow.findMany({
+    where: { featureSetId: featureSet.id, geography, measure: TARGET_MEASURE },
+    orderBy: [{ industry: 'asc' }, { periodStart: 'desc' }],
+    select: {
+      industry: true,
+      geography: true,
+      measure: true,
+      periodStart: true,
+      periodLabel: true,
+      targetValue: true,
+      prodLag1: true,
+      prodLag4: true,
+      prodRollMean4: true,
+      employmentGrowth: true,
+      labourCostGrowth: true,
+      quarter: true,
+      month: true,
+    },
+  });
+
+  // Keep only the first (latest) row per industry.
+  const latestByIndustry = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    if (!latestByIndustry.has(r.industry)) latestByIndustry.set(r.industry, r);
+  }
+
+  const contexts: FeatureContext[] = Array.from(latestByIndustry.values()).map((row) => ({
+    featureSetId: featureSet.id,
+    featureSetName: featureSet.name,
+    industry: row.industry,
+    geography: row.geography,
+    measure: row.measure,
+    basePeriod: row.periodLabel,
+    basePeriodStart: row.periodStart.toISOString().slice(0, 10),
+    currentObserved: row.targetValue,
+    features: {
+      prodLag1: row.prodLag1,
+      prodLag4: row.prodLag4,
+      prodRollMean4: row.prodRollMean4,
+      employmentGrowth: row.employmentGrowth,
+      labourCostGrowth: row.labourCostGrowth,
+      quarter: row.quarter,
+      month: row.month,
+    },
+  }));
+
+  return { featureSetName: featureSet.name, contexts };
+}
+
 /** Model metadata for the /api/v1/models endpoint. */
 export async function getModelInfo(): Promise<Record<string, unknown>> {
   return callBridge<Record<string, unknown>>({ action: 'model_info' });
