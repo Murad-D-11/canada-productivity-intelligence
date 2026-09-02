@@ -42,6 +42,52 @@ def build_parser() -> argparse.ArgumentParser:
         "--log-level", default="INFO", help="Logging level (DEBUG/INFO/WARNING/ERROR)."
     )
 
+    weather = sub.add_parser(
+        "ingest-weather",
+        help="Ingest Environment Canada (MSC GeoMet) weather observations.",
+    )
+    weather.add_argument(
+        "--collection", default="climate-monthly",
+        help="MSC GeoMet collection id (default climate-monthly).",
+    )
+    weather.add_argument(
+        "--period", default="MONTHLY", choices=["ANNUAL", "QUARTERLY", "MONTHLY"],
+        help="Temporal resolution to aggregate weather to (default MONTHLY).",
+    )
+    weather.add_argument(
+        "--provinces", default=None,
+        help="Comma-separated province codes to ingest (default: all Canadian provinces).",
+    )
+    weather.add_argument(
+        "--start", default=None, help="Start date YYYY-MM-DD (optional).",
+    )
+    weather.add_argument(
+        "--end", default=None, help="End date YYYY-MM-DD (optional).",
+    )
+    weather.add_argument(
+        "--max-per-province", type=int, default=None,
+        help="Cap records fetched per province (useful for a quick smoke ingest).",
+    )
+    weather.add_argument(
+        "--incremental", action="store_true",
+        help="Only ingest observations not already stored (skip duplicates).",
+    )
+    weather.add_argument(
+        "--log-level", default="INFO", help="Logging level (DEBUG/INFO/WARNING/ERROR)."
+    )
+
+    feats = sub.add_parser(
+        "generate-features",
+        help="Build the ML-ready feature matrix from productivity + weather.",
+    )
+    feats.add_argument(
+        "--name", default="productivity+weather@v1",
+        help="Feature set name recorded for reproducibility.",
+    )
+    feats.add_argument(
+        "--log-level", default="INFO", help="Logging level (DEBUG/INFO/WARNING/ERROR)."
+    )
+
     return parser
 
 
@@ -143,6 +189,109 @@ def cmd_ingest_statcan(product_id: int, incremental: bool, log_level: str) -> in
     return 0
 
 
+def cmd_ingest_weather(
+    *,
+    collection: str,
+    period: str,
+    provinces: str | None,
+    start: str | None,
+    end: str | None,
+    max_per_province: int | None,
+    incremental: bool,
+    log_level: str,
+) -> int:
+    """Run the MSC GeoMet weather ETL and write quality reports."""
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    from datetime import date
+
+    from cpi_ml.data.schemas import PeriodType
+    from cpi_ml.data.weather_client import WeatherClient
+    from cpi_ml.data.weather_etl import WeatherETL
+    from cpi_ml.data.weather_report import build_report_payload, write_reports
+    from cpi_ml.data.weather_repository import WeatherRepository
+
+    settings = get_settings()
+    if not settings.database_url:
+        print("ERROR: DATABASE_URL is not configured. Set it in .env or the environment.")
+        return 2
+
+    def _parse_date(s: str | None) -> date | None:
+        return date.fromisoformat(s) if s else None
+
+    prov_tuple = (
+        tuple(p.strip().upper() for p in provinces.split(",") if p.strip())
+        if provinces
+        else None
+    )
+
+    client = WeatherClient(
+        settings.msc_geomet_ogc_api_base_url,
+        request_delay_ms=settings.request_delay_ms,
+    )
+    repo = WeatherRepository(settings.database_url)
+    etl = WeatherETL(client, repo)
+
+    print(f"Ingesting MSC GeoMet weather (collection {collection}, period {period})...")
+    metrics = etl.ingest(
+        collection_id=collection,
+        period_type=PeriodType(period),
+        provinces=prov_tuple,
+        start=_parse_date(start),
+        end=_parse_date(end),
+        incremental=incremental,
+        max_records_per_province=max_per_province,
+    )
+
+    payload = build_report_payload(
+        collection_id=collection,
+        metrics=metrics,
+        period_type=period,
+        mode="INCREMENTAL" if incremental else "INITIAL",
+    )
+    docs_dir = Path(__file__).resolve().parents[3] / "docs"
+    md_path, json_path = write_reports(payload, docs_dir=docs_dir)
+
+    print("\nWeather ingestion summary:")
+    print(f"  downloaded={metrics.downloaded} inserted={metrics.inserted} "
+          f"updated={metrics.updated} duplicates={metrics.duplicates} "
+          f"rejected={metrics.rejected} missing={metrics.missing}")
+    print(f"  stations={metrics.stations} provinces={sorted(metrics.provinces)}")
+    print(f"  period: {metrics.earliest} -> {metrics.latest}")
+    print(f"  reports: {md_path}")
+    print(f"           {json_path}")
+    return 0
+
+
+def cmd_generate_features(*, name: str, log_level: str) -> int:
+    """Build + persist the ML-ready feature matrix."""
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    from cpi_ml.features_pipeline import FeaturePipeline
+
+    settings = get_settings()
+    if not settings.database_url:
+        print("ERROR: DATABASE_URL is not configured. Set it in .env or the environment.")
+        return 2
+
+    pipeline = FeaturePipeline(settings.database_url)
+    print(f"Generating feature matrix '{name}'...")
+    metrics = pipeline.run(name=name)
+
+    print("\nFeature generation summary:")
+    print(f"  rows={metrics.rows} industries={metrics.industries} "
+          f"measures={metrics.measures}")
+    print(f"  rows with weather={metrics.with_weather}")
+    print(f"  period: {metrics.earliest} -> {metrics.latest}")
+    print(f"  feature set id: {metrics.feature_set_id}")
+    print(f"  duration: {metrics.duration_seconds}s")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -153,6 +302,19 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_sources()
     if args.command == "ingest-statcan":
         return cmd_ingest_statcan(args.product_id, args.incremental, args.log_level)
+    if args.command == "ingest-weather":
+        return cmd_ingest_weather(
+            collection=args.collection,
+            period=args.period,
+            provinces=args.provinces,
+            start=args.start,
+            end=args.end,
+            max_per_province=args.max_per_province,
+            incremental=args.incremental,
+            log_level=args.log_level,
+        )
+    if args.command == "generate-features":
+        return cmd_generate_features(name=args.name, log_level=args.log_level)
 
     parser.print_help()
     return 0

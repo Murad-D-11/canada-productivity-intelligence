@@ -1,0 +1,5 @@
+.................................................
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\_strptime.py:786: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+DONE_FAIL

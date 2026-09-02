@@ -9,15 +9,28 @@ import {
   type Measure,
   type ObservationPoint,
 } from '../lib/statcanApi';
+import {
+  fetchWeatherHistory,
+  PROVINCES,
+  WEATHER_VARIABLE_META,
+  type WeatherPoint,
+  type WeatherVariable,
+} from '../lib/weatherApi';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
+const WEATHER_VARIABLES: WeatherVariable[] = [
+  'TEMPERATURE',
+  'PRECIPITATION',
+  'SNOWFALL',
+  'WIND_SPEED',
+];
+
 /**
- * Industry Explorer — wired to the real StatCan v1 API.
- *
- * Lets the user pick an industry and measure and renders the historical
- * productivity series with Recharts. Handles loading, empty, and error states
- * explicitly. Displays real data only; suppressed periods are omitted.
+ * Industry Explorer — wired to the real StatCan v1 API, with an optional
+ * Environment Canada weather overlay so users can compare productivity with
+ * weather trends. Handles loading, empty, and error states explicitly. Displays
+ * real data only; suppressed periods are omitted.
  */
 export function IndustryExplorerPage() {
   const [industries, setIndustries] = useState<Industry[]>([]);
@@ -30,6 +43,13 @@ export function IndustryExplorerPage() {
   const [seriesState, setSeriesState] = useState<LoadState>('loading');
   const [error, setError] = useState<string | null>(null);
 
+  // Weather overlay controls.
+  const [showWeather, setShowWeather] = useState(false);
+  const [province, setProvince] = useState('ON');
+  const [weatherVariable, setWeatherVariable] = useState<WeatherVariable>('TEMPERATURE');
+  const [weatherPoints, setWeatherPoints] = useState<WeatherPoint[]>([]);
+  const [weatherState, setWeatherState] = useState<LoadState>('ready');
+
   // Load industries + measures once.
   useEffect(() => {
     let cancelled = false;
@@ -39,7 +59,6 @@ export function IndustryExplorerPage() {
         if (cancelled) return;
         setIndustries(inds);
         setMeasures(meas);
-        // Sensible defaults: Total economy + Labour productivity if present.
         const defaultIndustry =
           inds.find((i) => /total economy/i.test(i.name)) ?? inds[0];
         const defaultMeasure =
@@ -58,7 +77,7 @@ export function IndustryExplorerPage() {
     };
   }, []);
 
-  // Load the series whenever the selection changes.
+  // Load the productivity series whenever the selection changes.
   useEffect(() => {
     if (industryId === null || measureId === null) return;
     let cancelled = false;
@@ -79,8 +98,37 @@ export function IndustryExplorerPage() {
     };
   }, [industryId, measureId]);
 
+  // Load the weather overlay when enabled or when its controls change.
+  useEffect(() => {
+    if (!showWeather) return;
+    let cancelled = false;
+    setWeatherState('loading');
+    fetchWeatherHistory({ province, variable: weatherVariable })
+      .then((res) => {
+        if (cancelled) return;
+        setWeatherPoints(res.data);
+        setWeatherState('ready');
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setWeatherState('error');
+        setWeatherPoints([]);
+        // Non-fatal: the productivity chart still renders without the overlay.
+        void e;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showWeather, province, weatherVariable]);
+
   const plottable = useMemo(() => points.filter((p) => p.value !== null), [points]);
   const unit = points[0]?.unit ?? null;
+
+  const overlay = useMemo(() => {
+    if (!showWeather || weatherState !== 'ready' || weatherPoints.length === 0) return null;
+    const meta = WEATHER_VARIABLE_META[weatherVariable];
+    return { points: weatherPoints, label: meta.label, unit: meta.unit };
+  }, [showWeather, weatherState, weatherPoints, weatherVariable]);
 
   return (
     <>
@@ -129,8 +177,39 @@ export function IndustryExplorerPage() {
             <CardHeader
               title="Historical productivity"
               description={unit ? `Unit: ${unit}` : 'Observed series over time.'}
+              actions={
+                <label className="flex items-center gap-2 text-sm text-content-muted">
+                  <input
+                    type="checkbox"
+                    checked={showWeather}
+                    onChange={(e) => setShowWeather(e.target.checked)}
+                    aria-label="Overlay weather"
+                  />
+                  Overlay weather
+                </label>
+              }
             />
             <CardBody>
+              {showWeather ? (
+                <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Select
+                    label="Weather province"
+                    value={province}
+                    onChange={(e) => setProvince(e.target.value)}
+                    options={PROVINCES.map((p) => ({ value: p.code, label: `${p.name} (${p.code})` }))}
+                  />
+                  <Select
+                    label="Weather variable"
+                    value={weatherVariable}
+                    onChange={(e) => setWeatherVariable(e.target.value as WeatherVariable)}
+                    options={WEATHER_VARIABLES.map((v) => ({
+                      value: v,
+                      label: WEATHER_VARIABLE_META[v].label,
+                    }))}
+                  />
+                </div>
+              ) : null}
+
               {seriesState === 'loading' ? (
                 <EmptyState title="Loading series…" description="Fetching observations." />
               ) : seriesState === 'error' ? (
@@ -144,7 +223,19 @@ export function IndustryExplorerPage() {
                   description="Statistics Canada has not published values for this industry and measure combination (all periods suppressed)."
                 />
               ) : (
-                <ProductivityChart points={points} />
+                <>
+                  <ProductivityChart points={points} weather={overlay} />
+                  {showWeather && weatherState === 'ready' && weatherPoints.length === 0 ? (
+                    <p className="mt-2 text-sm text-content-subtle">
+                      No weather data available for {province} / {WEATHER_VARIABLE_META[weatherVariable].label}. Ingest weather to populate this overlay.
+                    </p>
+                  ) : null}
+                  {showWeather && weatherState === 'error' ? (
+                    <p className="mt-2 text-sm text-content-subtle">
+                      Weather overlay is unavailable right now; showing productivity only.
+                    </p>
+                  ) : null}
+                </>
               )}
             </CardBody>
           </Card>

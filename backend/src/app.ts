@@ -8,6 +8,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { apiRouter } from './routes/api.router.js';
 import { healthRouter } from './routes/health.route.js';
 import { v1Router } from './routes/v1.router.js';
+import { weatherRouter } from './routes/weather.router.js';
 
 /**
  * Builds and configures the Express application. Factored out from server
@@ -26,6 +27,10 @@ export function createApp(): Express {
 
   // Versioned StatCan data API (real ingested data).
   app.use('/api/v1', v1Router);
+
+  // Weather + feature API (real ingested / derived data). Mounted before the
+  // meta router so its concrete routes take precedence.
+  app.use('/api', weatherRouter);
 
   // Legacy/meta API surface (service metadata, planned-endpoint contract).
   app.use('/api', apiRouter);

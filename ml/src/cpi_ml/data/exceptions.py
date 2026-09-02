@@ -35,3 +35,32 @@ class StatCanValidationError(StatCanError):
 
     ETL uses this to reject and log malformed rows rather than crashing.
     """
+
+
+class WeatherError(Exception):
+    """Base class for all MSC GeoMet weather pipeline errors."""
+
+
+class WeatherHTTPError(WeatherError):
+    """Raised when an HTTP request to GeoMet fails after retries.
+
+    Carries the final status code (if any) for diagnostics.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class WeatherResponseError(WeatherError):
+    """Raised when a GeoMet response does not match the expected contract.
+
+    Examples: missing ``features`` array, non-GeoJSON payload shape.
+    """
+
+
+class WeatherValidationError(WeatherError):
+    """Raised when a weather record fails validation.
+
+    ETL uses this to reject and log malformed records rather than crashing.
+    """

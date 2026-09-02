@@ -415,3 +415,186 @@ enum IngestionMode {
   INITIAL
   INCREMENTAL
 }
+
+// ===========================================================================
+// Environment Canada weather pipeline (Master Prompt 3)
+//
+// Normalized tables for ingested MSC GeoMet (api.weather.gc.ca) climate-station
+// observations, plus the ML-ready feature matrix derived from productivity +
+// weather. Kept separate from the StatCan* source-of-truth tables above so
+// weather provenance is fully auditable and never confused with productivity
+// observations. Missing values remain null (never fabricated/imputed at rest).
+//
+// Weather is matched to a Canadian province (two-letter code) so it can be
+// aligned to productivity industries operating in that province, and aggregated
+// to the same temporal resolution as productivity (monthly/quarterly/annual).
+// ===========================================================================
+
+/// A climate/weather monitoring station discovered from MSC GeoMet metadata.
+/// Stations are discovered from the source (never hardcoded).
+model WeatherStation {
+  id           String   @id @default(cuid())
+  /// MSC/ECCC climate station identifier (e.g. CLIMATE_IDENTIFIER or STN_ID).
+  stationId    String
+  name         String
+  /// Two-letter Canadian province/territory code (e.g. "ON", "QC", "BC").
+  province     String
+  latitude     Float?
+  longitude    Float?
+  elevation    Float?
+  createdAt    DateTime @default(now())
+
+  observations WeatherObservation[]
+
+  @@unique([stationId])
+  @@index([province])
+}
+
+/// A single normalized weather observation aggregated to a reporting period.
+/// One row per (station, period, variable). Values are null when the source
+/// reports the variable as missing (never imputed at rest).
+model WeatherObservation {
+  id           String   @id @default(cuid())
+  stationId    String
+  /// Two-letter province code, denormalized for fast province-level rollups.
+  province     String
+
+  /// Normalized period start date (first day of the reporting period).
+  periodStart  DateTime
+  /// Normalized period label, e.g. "2019" / "2019-Q1" / "2019-01".
+  periodLabel  String
+  periodType   PeriodType
+
+  /// Weather variable name (TEMPERATURE, PRECIPITATION, SNOWFALL, WIND_SPEED).
+  variable     WeatherVariable
+  /// Aggregated value for the period (mean for temp/wind, sum for precip/snow).
+  value        Float?
+  unit         String
+  /// How the value was aggregated over the period ("MEAN" | "SUM").
+  aggregation  String
+  /// Number of underlying source observations aggregated into this value.
+  sampleCount  Int      @default(0)
+
+  // --- Provenance --------------------------------------------------------
+  source       DataSource @default(MSC_GEOMET)
+  /// MSC GeoMet collection id the raw records came from (e.g. climate-monthly).
+  collectionId String?
+  retrievedAt  DateTime
+  ingestedAt   DateTime   @default(now())
+  ingestionRunId String?
+
+  station      WeatherStation      @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  ingestionRun WeatherIngestionRun? @relation(fields: [ingestionRunId], references: [id])
+
+  @@unique([stationId, periodStart, variable])
+  @@index([periodStart])
+  @@index([province])
+  @@index([variable])
+  @@index([province, variable, periodStart])
+}
+
+/// Records each weather ingestion attempt with quality metrics for auditing.
+model WeatherIngestionRun {
+  id             String        @id @default(cuid())
+  status         IngestionStatus @default(RUNNING)
+  mode           IngestionMode
+  /// MSC GeoMet collection id ingested (e.g. "climate-monthly").
+  collectionId   String
+  startedAt      DateTime      @default(now())
+  finishedAt     DateTime?
+
+  // --- Quality metrics ---------------------------------------------------
+  observationsDownloaded Int @default(0)
+  observationsInserted   Int @default(0)
+  observationsUpdated    Int @default(0)
+  duplicatesSkipped      Int @default(0)
+  rowsRejected           Int @default(0)
+  missingValues          Int @default(0)
+  stationsDiscovered     Int @default(0)
+  earliestPeriod DateTime?
+  latestPeriod   DateTime?
+  durationSeconds Float?
+  errorMessage   String?
+
+  observations WeatherObservation[]
+
+  @@index([collectionId, startedAt])
+}
+
+enum WeatherVariable {
+  TEMPERATURE
+  PRECIPITATION
+  SNOWFALL
+  WIND_SPEED
+}
+
+// ===========================================================================
+// ML-ready feature matrix (Master Prompt 3)
+//
+// Reproducible, leakage-safe features derived from ingested productivity and
+// weather. One row per (industry, geography/province, measure, period). Feature
+// values may be null where insufficient history exists (e.g. first lag). A
+// FeatureSet row records each generation run for reproducibility.
+// ===========================================================================
+
+/// A feature-generation run (reproducibility metadata for the feature matrix).
+model FeatureSet {
+  id            String   @id @default(cuid())
+  /// Human/pipeline label, e.g. "productivity+weather@v1".
+  name          String
+  /// Latest period included; guards against look-ahead when training.
+  periodCutoff  DateTime
+  periodType    PeriodType
+  /// Ordered list of feature column names produced (JSON array).
+  featureListJson Json
+  rowCount      Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  rows FeatureRow[]
+
+  @@index([name, createdAt])
+}
+
+/// A single ML-ready feature row. All lag/rolling features use ONLY past
+/// information relative to `periodStart` (computed with shift(1)).
+model FeatureRow {
+  id           String   @id @default(cuid())
+  featureSetId String
+
+  /// Industry (StatCan NAICS member name, as ingested).
+  industry     String
+  /// Geography label (e.g. "Canada" or a province name), as ingested.
+  geography    String
+  /// Productivity measure name (e.g. "Labour productivity").
+  measure      String
+
+  periodStart  DateTime
+  periodLabel  String
+  periodType   PeriodType
+
+  /// The target/observed productivity value for this period (null if suppressed).
+  targetValue  Float?
+
+  // --- Engineered features (null where insufficient history) -------------
+  prodLag1        Float?
+  prodLag4        Float?
+  prodRollMean4   Float?
+  employmentGrowth  Float?
+  labourCostGrowth  Float?
+  /// Seasonal indicators.
+  quarter         Int?
+  month           Int?
+  /// Weather aggregates matched to the same period + province.
+  weatherTempMean     Float?
+  weatherPrecipSum    Float?
+  weatherSnowfallSum  Float?
+  weatherWindMean     Float?
+
+  createdAt    DateTime @default(now())
+
+  featureSet FeatureSet @relation(fields: [featureSetId], references: [id], onDelete: Cascade)
+
+  @@unique([featureSetId, industry, geography, measure, periodStart])
+  @@index([periodStart])
+  @@index([industry, measure, periodStart])
+}

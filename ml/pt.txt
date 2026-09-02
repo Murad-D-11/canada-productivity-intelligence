@@ -1,0 +1,73 @@
+.................................................
+=================================== PASSES ====================================
+__________________ test_retry_on_transient_5xx_then_success ___________________
+------------------------------ Captured log call ------------------------------
+WARNING  cpi_ml.data.statcan:statcan_client.py:103 retryable HTTP 503 on https://example.test/t1/wds/rest/getCubeMetadata (attempt 1)
+___________________ test_exhausted_retries_raise_http_error ___________________
+------------------------------ Captured log call ------------------------------
+WARNING  cpi_ml.data.statcan:statcan_client.py:103 retryable HTTP 500 on https://example.test/t1/wds/rest/getCubeMetadata (attempt 1)
+WARNING  cpi_ml.data.statcan:statcan_client.py:103 retryable HTTP 500 on https://example.test/t1/wds/rest/getCubeMetadata (attempt 2)
+WARNING  cpi_ml.data.statcan:statcan_client.py:103 retryable HTTP 500 on https://example.test/t1/wds/rest/getCubeMetadata (attempt 3)
+______________ test_failed_load_records_failed_run_and_reraises _______________
+------------------------------ Captured log call ------------------------------
+ERROR    cpi_ml.data.etl:etl.py:195 ingestion failed; transaction rolled back
+Traceback (most recent call last):
+  File "C:\Coding Projects\GitHub\canada-productivity-intelligence\ml\src\cpi_ml\data\etl.py", line 184, in ingest
+    ins, upd = self._repo.upsert_observations(conn, batch)
+               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\dashd\OneDrive\Desktop\Desktop Folder\Coding Projects\GitHub\canada-productivity-intelligence\ml\tests\test_statcan_etl.py", line 61, in upsert_observations
+RuntimeError: simulated DB failure
+=========================== short test summary info ===========================
+PASSED tests/test_features.py::test_add_lags_uses_only_past_values
+PASSED tests/test_features.py::test_rolling_mean_excludes_current_period
+PASSED tests/test_features_pipeline.py::test_lag_uses_only_prior_period
+PASSED tests/test_features_pipeline.py::test_rolling_mean_excludes_current_period
+PASSED tests/test_features_pipeline.py::test_null_coercion_never_emits_nan
+PASSED tests/test_features_pipeline.py::test_feature_columns_are_stable
+PASSED tests/test_forecasting.py::test_expanding_window_never_leaks_future
+PASSED tests/test_forecasting.py::test_backtest_reports_real_metrics
+PASSED tests/test_forecasting.py::test_attributions_sorted_descending
+PASSED tests/test_statcan_client.py::test_get_cube_metadata_parses_dimensions
+PASSED tests/test_statcan_client.py::test_get_cube_metadata_rejects_non_success_status
+PASSED tests/test_statcan_client.py::test_full_table_download_splits_bundle
+PASSED tests/test_statcan_client.py::test_retry_on_transient_5xx_then_success
+PASSED tests/test_statcan_client.py::test_exhausted_retries_raise_http_error
+PASSED tests/test_statcan_etl.py::test_full_ingest_inserts_all_rows
+PASSED tests/test_statcan_etl.py::test_incremental_skips_existing_as_duplicates
+PASSED tests/test_statcan_etl.py::test_failed_load_records_failed_run_and_reraises
+PASSED tests/test_statcan_transform.py::test_coordinate_positions
+PASSED tests/test_statcan_transform.py::test_transform_row_resolves_members_and_value
+PASSED tests/test_statcan_transform.py::test_transform_row_suppressed_value_is_none
+PASSED tests/test_statcan_transform.py::test_transform_row_rejects_unknown_industry
+PASSED tests/test_statcan_transform.py::test_transform_row_rejects_missing_coordinate
+PASSED tests/test_statcan_transform.py::test_resolve_dimension_roles_maps_correctly
+PASSED tests/test_statcan_validators.py::test_normalize_period_annual
+PASSED tests/test_statcan_validators.py::test_normalize_period_monthly
+PASSED tests/test_statcan_validators.py::test_normalize_period_quarterly_from_month
+PASSED tests/test_statcan_validators.py::test_normalize_period_fiscal_span
+PASSED tests/test_statcan_validators.py::test_normalize_period_rejects_malformed[]
+PASSED tests/test_statcan_validators.py::test_normalize_period_rejects_malformed[notadate]
+PASSED tests/test_statcan_validators.py::test_normalize_period_rejects_malformed[2019-13]
+PASSED tests/test_statcan_validators.py::test_normalize_period_rejects_malformed[2019-99-99]
+PASSED tests/test_statcan_validators.py::test_normalize_period_rejects_malformed[19x9]
+PASSED tests/test_statcan_validators.py::test_validate_quarter_label_accepts_valid
+PASSED tests/test_statcan_validators.py::test_validate_quarter_label_rejects_malformed[2019-Q5]
+PASSED tests/test_statcan_validators.py::test_validate_quarter_label_rejects_malformed[2019Q1]
+PASSED tests/test_statcan_validators.py::test_validate_quarter_label_rejects_malformed[2019-3]
+PASSED tests/test_statcan_validators.py::test_validate_quarter_label_rejects_malformed[Q1-2019]
+PASSED tests/test_statcan_validators.py::test_parse_value_treats_suppressed_as_none[]
+PASSED tests/test_statcan_validators.py::test_parse_value_treats_suppressed_as_none[..]
+PASSED tests/test_statcan_validators.py::test_parse_value_treats_suppressed_as_none[...]
+PASSED tests/test_statcan_validators.py::test_parse_value_treats_suppressed_as_none[F]
+PASSED tests/test_statcan_validators.py::test_parse_value_treats_suppressed_as_none[x]
+PASSED tests/test_statcan_validators.py::test_parse_value_treats_suppressed_as_none[None]
+PASSED tests/test_statcan_validators.py::test_parse_value_parses_real_numbers
+PASSED tests/test_statcan_validators.py::test_parse_value_rejects_garbage
+PASSED tests/test_statcan_validators.py::test_require_non_empty_rejects_blank
+PASSED tests/test_statcan_validators.py::test_normalize_unit_defaults_unknown
+PASSED tests/test_weather_client.py::test_parses_all_four_variables_and_identity
+PASSED tests/test_weather_client.py::test_missing_variable_stays_none_not_fabricated
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+C:\Coding Projects\GitHub\canada-productivity-intelligence\ml\src\cpi_ml\data\weather_client.py:202: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+EXITCODE=0 
