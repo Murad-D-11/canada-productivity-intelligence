@@ -15,7 +15,7 @@ never fabricates data, forecasts, drivers, or metrics.
 
 ## What it is
 
-A working prototype (built for the Ascendance Foundry Hackathon) that:
+A working prototype that:
 
 - ingests real Statistics Canada labour-productivity data,
 - trains and validates a forecasting model with strict temporal discipline,
@@ -193,7 +193,7 @@ cd ml && pytest                            # ML tests
 
 Use *Business sector, goods* or *Agriculture, forestry, fishing and hunting* for a configuration that reliably has data.
 
-## Hackathon talking points
+## Talking points
 
 ### Three technical points
 
