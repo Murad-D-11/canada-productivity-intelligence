@@ -451,6 +451,7 @@ cd ml && .venv\Scripts\python.exe -m pytest # ML tests
 - [Architecture](docs/architecture.md)
 - [Methodology](docs/methodology.md)
 - [ML package](ml/README.md)
+- [Portfolio Page](https://github.com/Murad-D-11/canada-productivity-intelligence/blob/main/Murad_Dashdamirov_Portfolio.md)
 
 ## License
 
