@@ -14,7 +14,12 @@ dashdamirov.murad11@gmail.com | [LinkedIn](https://www.linkedin.com/in/murad-das
 ### 1. Forecast & Explainability
 
 ![Forecast screen: observed-vs-forecast chart with driver breakdown](assets/cpi-forecast.png)
-
+<!--
+  IMAGE: PNG. Capture the Forecast page for one industry with BOTH visible:
+    - the Recharts observed-vs-forecast line chart, and
+    - the "What is driving this forecast?" driver contribution breakdown.
+  Caption idea below.
+-->
 *Next-quarter forecast for a selected industry, with the exact per-feature contributions that produced it.*
 
 - Forecasts next-quarter labour productivity for a chosen industry and renders the observed history against the projected point, reporting both absolute and percentage change versus the latest observed value.
