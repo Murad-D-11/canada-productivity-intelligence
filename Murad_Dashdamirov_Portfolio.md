@@ -1,4 +1,4 @@
-# Portfolio — Murad Dashdamirov
+# Murad Dashdamirov -- Portfolio
 
 dashdamirov.murad11@gmail.com | [LinkedIn](https://www.linkedin.com/in/murad-dashdamirov-90461934a) | [GitHub](https://github.com/Murad-D-11)
 
@@ -24,7 +24,7 @@ dashdamirov.murad11@gmail.com | [LinkedIn](https://www.linkedin.com/in/murad-das
 
 - Forecasts next-quarter labour productivity for a chosen industry and renders the observed history against the projected point, reporting both absolute and percentage change versus the latest observed value.
 - Explains every prediction exactly rather than approximately: the linear model's output is decomposed into a base value plus each feature's contribution (`coefficient × scaled value`), so the ranked drivers of a forecast are deterministic and reproducible.
-- Kept the machine-learning boundary strict — the React frontend consumes REST responses only and never assembles a feature vector, so all feature retrieval and model invocation stay server-side and cannot drift between client and model.
+- Kept the machine-learning boundary strict -- the React frontend consumes REST responses only and never assembles a feature vector, so all feature retrieval and model invocation stay server-side and cannot drift between client and model.
 - Chose to fail honestly over filling gaps: when the model is untrained or a feature is missing, the API returns a typed error instead of a fabricated number, so the UI renders an explicit empty or error state.
 
 ### 2. System Architecture
@@ -34,7 +34,7 @@ dashdamirov.murad11@gmail.com | [LinkedIn](https://www.linkedin.com/in/murad-das
 *Frontend calls REST only; the backend owns feature retrieval and invokes the Python model through a JSON stdin/stdout bridge.*
 
 - Separated the system into three decoupled tiers so Python internals never reach the browser: a React SPA, a Node/Express REST API that reads the feature matrix from PostgreSQL through Prisma, and a Python `cpi_ml` package that runs the trained scikit-learn model.
-- Integrated Node and Python through a JSON stdin/stdout bridge (`python -m cpi_ml.bridge`) rather than standing up a queue or separate microservice — the simplest mechanism that fit the existing architecture and added no runtime infrastructure to operate.
+- Integrated Node and Python through a JSON stdin/stdout bridge (`python -m cpi_ml.bridge`) rather than standing up a queue or separate microservice -- the simplest mechanism that fit the existing architecture and added no runtime infrastructure to operate.
 - Mapped bridge error codes onto meaningful HTTP statuses (untrained model → 503, bad input → 400, upstream failure → 502) so callers can distinguish a not-ready system from a bad request.
 
 > This diagram is rendered from the system diagram in `docs/architecture.md` and reflects the shipped implementation: scikit-learn ridge/random-forest models with exact linear attribution, Statistics Canada as the active data source, and forecast/scenario endpoints served under `/api/v1`.
@@ -49,7 +49,7 @@ dashdamirov.murad11@gmail.com | [LinkedIn](https://www.linkedin.com/in/murad-das
 - Validated every scenario against a single source of truth for feature metadata, rejecting unknown, out-of-range, or non-controllable inputs (forecast targets, lag features, and calendar fields) so a scenario can never silently corrupt the feature vector.
 - Framed results honestly with a non-causal disclaimer: a scenario reports how the model responds to changed inputs, not a causal effect or a guarantee about the real economy.
 
-### 4. National Overview — Industry Ranking
+### 4. National Overview -- Industry Ranking
 
 ![Industries ranked by predicted next-quarter change](assets/cpi-overview.png)
 
@@ -65,5 +65,5 @@ dashdamirov.murad11@gmail.com | [LinkedIn](https://www.linkedin.com/in/murad-das
 *Real Statistics Canada ingestion with full provenance; no values are imputed at rest.*
 
 - Ingested 29,443 Statistics Canada observations across 21 industries and 8 measures (coverage 1981–2026) into PostgreSQL, preserving each observation's source provenance and status flags and leaving suppressed values null rather than fabricating them.
-- Engineered a 7-feature, past-only matrix (lagged productivity, four-quarter rolling mean, employment and labour-cost growth, and calendar fields) built with `shift(1)`, so a predictor for a given quarter uses only information available at or before that quarter — no look-ahead leakage.
+- Engineered a 7-feature, past-only matrix (lagged productivity, four-quarter rolling mean, employment and labour-cost growth, and calendar fields) built with `shift(1)`, so a predictor for a given quarter uses only information available at or before that quarter -- no look-ahead leakage.
 - Wrote a quality report on each ingestion run (observations downloaded, updated, rejected, and missing) so data freshness and coverage are auditable rather than assumed.
