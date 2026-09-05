@@ -72,7 +72,7 @@ SHOWCASE PRIORITY (what to lead with and why) — read this, then delete it:
     - the "What is driving this forecast?" driver contribution breakdown.
   Caption idea below.
 -->
-*Next-quarter forecast for a selected industry, with the exact per-feature contributions that produced it.*
+*Next-quarter forecast for a selected industry (i.e. construction), with the exact per-feature contributions that produced it.*
 
 - Forecasts next-quarter labour productivity for a chosen industry and renders the observed history against the projected point, with absolute and percentage change versus the latest observed value.
 - Explains every prediction exactly: the linear model's output is decomposed into a base value plus each feature's contribution (`coefficient × scaled value`), so the top drivers are deterministic — no SHAP approximation.
