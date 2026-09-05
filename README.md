@@ -424,27 +424,7 @@ cd ml && .venv\Scripts\python.exe -m pytest # ML tests
 - **No fabricated uncertainty.** Only point forecasts and real backtest error are
   shown; no invented confidence bands.
 
-<<<<<<< HEAD
-## Two-minute demo
 
-1. "Canada has a productivity problem — and the public data to study it is scattered and hard to use."
-2. Open **Canada Overview**: the national snapshot and the industry comparison ranked by the model's predicted next-quarter change.
-3. Click an industry (e.g. *Agriculture, forestry, fishing and hunting*) to drill into its **Forecast**.
-4. Show the **historical productivity** series (solid line) and the **forecast** point (dashed, distinct).
-5. Read the **summary**: current vs forecast productivity and the expected change.
-6. Open **"What is driving this forecast?"** — the real model contributions; expand one to see its value, unit, and source.
-7. Scroll to **Test a Scenario**.
-8. Change one or two eligible inputs (e.g. `employmentGrowth`, `labourCostGrowth`).
-9. Click **Simulate** and compare **baseline vs scenario** (difference + comparison bars + changed-assumptions table).
-10. Note the on-screen warning: this is a **model-based scenario, not a causal guarantee**.
-11. Close on **Methodology**: real data sources, the pipeline, and the model's honest backtest metrics — the point is to help identify areas worth investigating, transparently.
-
-Use *Business sector, goods* or *Agriculture, forestry, fishing and hunting* for a configuration that reliably has data.
-
-## Talking points
-
-=======
->>>>>>> 3420b6362ee3f4879ad2e66b54340195c3badda8
 ### Three technical points
 
 - **Temporal leakage prevention.** Every feature is past-only (`shift(1)`), and
